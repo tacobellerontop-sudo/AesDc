@@ -48,6 +48,14 @@ jobs:
           cd corrode && npm ci && npm run build
           echo "CORRODE_DIST=$PWD/dist" >> "$GITHUB_ENV"
 
+      # Published builds must include Corrode.
+      - name: Require Corrode for releases
+        if: github.event_name == 'push' && env.CORRODE_DIST == ''
+        shell: bash
+        run: |
+          echo "::error::No Corrode build found on corrode@${{ inputs.corrode_ref || 'main' }}; refusing to publish a client without it."
+          exit 1
+
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: |
