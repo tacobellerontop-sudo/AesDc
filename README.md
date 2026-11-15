@@ -7,7 +7,18 @@ ejector that puts the original Discord back.
 It works with Discord Stable, PTB, Canary and Development on Windows, macOS and Linux, including
 the Flatpak. It needs Node.js 18 or newer and has no runtime dependencies.
 
-## Usage
+## Download
+
+Every push to `main` builds `aesdc-windows-x64.exe` (plus Linux and macOS binaries) and publishes
+them on the [**latest-main** release](https://github.com/tacobellerontop-sudo/AesDc/releases/tag/latest-main).
+Tagging `v*` publishes a versioned release. Double-click the `.exe` to get the menu, or run it from
+a terminal with the commands below. It doesn't need Node.js. Windows SmartScreen will warn about it
+because it isn't code-signed: click **More info > Run anyway**.
+
+The executable includes the Corrode build from Corrode's `main` branch when there is one. To bundle
+another branch, run the **Build executables** workflow manually and set `corrode_ref`.
+
+## Usage from source
 
 ```sh
 git clone https://github.com/tacobellerontop-sudo/AesDc && cd AesDc
@@ -96,7 +107,10 @@ Corrode's `manifest.json`.
 npm install
 npm test                       # unit tests: injection, ejection, discovery, installer
 xvfb-run -a npm run test:e2e   # boots a fake Discord in real Electron (drop xvfb-run on a desktop)
+npm run build:exe              # build/aesdc(.exe) for this OS; set CORRODE_DIST to bundle Corrode
 ```
+
+`AESDC_EXE=build/aesdc npm run test:e2e` runs the end-to-end test against the built executable.
 
 The end-to-end test builds a fake Discord (Electron plus an `app.asar` shaped like Discord's main
 window), installs Corrode with the real CLI, checks that Corrode loads early with the bridge and

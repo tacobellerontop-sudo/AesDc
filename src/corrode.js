@@ -88,6 +88,19 @@ async function resolveBundle(source) {
   };
 }
 
+/** The Corrode build embedded into the executable at build time, or null. */
+function embeddedBundle() {
+  const assets = require("./assets");
+  if (!assets.isSea()) return null;
+  const manifestBuf = assets.read("corrode/manifest.json");
+  const code = assets.read("corrode/corrode.min.js");
+  if (!manifestBuf || !code) return null;
+  const manifest = JSON.parse(manifestBuf.toString("utf8"));
+  checkApi(manifest.injectorApiVersion, "the bundled Corrode");
+  verify(code, manifest, manifest.main || "corrode.min.js", "the bundled Corrode");
+  return { code, manifest: { ...manifest, source: "bundled with AesDc" } };
+}
+
 /** Write a resolved bundle into `<dataDir>/corrode/`. */
 function writeBundle(dataDir, { code, manifest }) {
   const dir = path.join(dataDir, "corrode");
@@ -102,4 +115,4 @@ function installedBundle(dataDir) {
   return readJson(path.join(dir, "manifest.json"), {}) || {};
 }
 
-module.exports = { resolveBundle, writeBundle, installedBundle, parseBanner, releaseManifestUrl, SUPPORTED_API_VERSIONS, DEFAULT_REPO };
+module.exports = { embeddedBundle, resolveBundle, writeBundle, installedBundle, parseBanner, releaseManifestUrl, SUPPORTED_API_VERSIONS, DEFAULT_REPO };

@@ -1,0 +1,89 @@
+name: Build executables
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      corrode_ref:
+        description: Corrode branch, tag or commit to bundle into the executable
+        default: main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: windows-x64, file: aesdc.exe, asset: aesdc-windows-x64.exe }
+          - { os: ubuntu-latest, name: linux-x64, file: aesdc, asset: aesdc-linux-x64 }
+          - { os: macos-latest, name: macos-arm64, file: aesdc, asset: aesdc-macos-arm64 }
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Bundle a Corrode build into the executable so it works before Corrode has a release.
+      - name: Check out Corrode
+        uses: actions/checkout@v4
+        with:
+          repository: tacobellerontop-sudo/corrode
+          ref: ${{ inputs.corrode_ref || 'main' }}
+          path: corrode
+      - name: Build Corrode
+        if: hashFiles('corrode/package.json') != ''
+        shell: bash
+        run: |
+          cd corrode
+          npm ci
+          npm run build
+          echo "CORRODE_DIST=$PWD/dist" >> "$GITHUB_ENV"
+
+      - run: npm ci
+      - run: npm test
+      - run: node scripts/build-exe.js
+      - name: Smoke test
+        shell: bash
+        run: |
+          ./build/${{ matrix.file }} --help
+          ./build/${{ matrix.file }} status
+          mv build/${{ matrix.file }} build/${{ matrix.asset }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: build/${{ matrix.asset }}
+
+  release:
+    name: Publish
+    needs: build
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            gh release create "$GITHUB_REF_NAME" dist/* --title "AesDc $GITHUB_REF_NAME" --generate-notes
+          else
+            # Rolling build of main: replace the "latest-main" pre-release.
+            gh release delete latest-main --cleanup-tag --yes || true
+            gh release create latest-main dist/* --prerelease --target "$GITHUB_SHA" \
+              --title "AesDc (latest main)" \
+              --notes "Built from ${GITHUB_SHA::7}. Download aesdc-windows-x64.exe and double-click it, or run it from a terminal with --help."
+          fi

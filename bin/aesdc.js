@@ -53,9 +53,9 @@ function parseArgs(argv) {
   return { cmd: positional.shift(), targets: positional, flags };
 }
 
+class UsageError extends Error {}
 function fail(msg) {
-  console.error(`error: ${msg}`);
-  process.exit(1);
+  throw new UsageError(msg);
 }
 
 const log = (m) => console.log(`  ${m}`);
@@ -164,7 +164,11 @@ async function interactive(flags) {
       }
       const purge = cmd === "uninstall" && /^y/i.test(await rl.question("Also delete Corrode's settings? [y/N] "));
       console.log();
-      await runCommand(cmd, targets, { ...flags, purge });
+      try {
+        await runCommand(cmd, targets, { ...flags, purge });
+      } catch (err) {
+        console.log(`error: ${err.message}`);
+      }
       console.log();
     }
   } finally {

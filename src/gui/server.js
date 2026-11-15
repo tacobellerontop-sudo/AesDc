@@ -3,10 +3,8 @@
 // No dependencies, nothing to install. Every API call needs the random token that is only in the
 // URL opened by AesDc, and the Host header must be the loopback address (no DNS rebinding).
 const http = require("node:http");
-const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
-const { fs } = require("../fsx");
 const discord = require("../discord");
 const installer = require("../installer");
 
@@ -53,7 +51,7 @@ function pick(ids) {
  */
 function serve({ port = 0, open = true, source, host = "127.0.0.1" } = {}) {
   const token = crypto.randomBytes(18).toString("base64url");
-  const page = fs.readFileSync(path.join(__dirname, "index.html"), "utf8").replace("__TOKEN__", token);
+  const page = require("../assets").readText("src/gui/index.html").replace("__TOKEN__", token);
   let busy = false;
 
   const server = http.createServer(async (req, res) => {

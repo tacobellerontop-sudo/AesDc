@@ -2,14 +2,14 @@
 // What the CLI and the GUI actually do: install, uninstall (eject), repair, update and status.
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const { fs, exists, readJson, writeFileAtomic, rm, copy } = require("./fsx");
+const { fs, exists, readJson, writeFileAtomic, rm } = require("./fsx");
+const assets = require("./assets");
 const injector = require("./inject");
 const discord = require("./discord");
 const corrode = require("./corrode");
 const processes = require("./processes");
 
-const PKG_ROOT = path.join(__dirname, "..");
-const VERSION = readJson(path.join(PKG_ROOT, "package.json"), {}).version;
+const VERSION = JSON.parse(assets.readText("package.json")).version;
 
 const hostMain = (dataDir) => path.join(dataDir, "host", "runtime", "main.js");
 const recordFile = (dataDir) => path.join(dataDir, "installs.json");
@@ -35,16 +35,16 @@ function fixOwnership(dataDir) {
   } catch {}
 }
 
-/** Copy the runtime (runtime/ and the src/ modules it uses) into `<dataDir>/host`. */
+/** Write the runtime (runtime/ and the src/ modules it uses) into `<dataDir>/host`. */
 function deployHost(dataDir) {
   const host = path.join(dataDir, "host");
   const next = path.join(dataDir, `host.${process.pid}.new`);
   rm(next);
-  fs.mkdirSync(next, { recursive: true });
-  copy(path.join(PKG_ROOT, "runtime"), path.join(next, "runtime"));
-  copy(path.join(PKG_ROOT, "src"), path.join(next, "src"));
-  rm(path.join(next, "src", "gui"));
-  fs.copyFileSync(path.join(PKG_ROOT, "package.json"), path.join(next, "package.json"));
+  for (const rel of assets.HOST_FILES) {
+    const file = path.join(next, ...rel.split("/"));
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, assets.read(rel));
+  }
   rm(host);
   fs.renameSync(next, host);
 }
@@ -55,10 +55,16 @@ function deployHost(dataDir) {
  */
 async function prepareDataDirs(dataDirs, { source, refresh, log }) {
   let resolved = null;
+  // A Corrode build embedded in the executable is used for first installs, not for updates.
+  const embedded = !source && !refresh ? corrode.embeddedBundle() : null;
   for (const dataDir of dataDirs) {
     fs.mkdirSync(dataDir, { recursive: true });
     deployHost(dataDir);
     if (refresh || source || !corrode.installedBundle(dataDir)) {
+      if (!resolved && embedded) {
+        resolved = embedded;
+        log(`Using the bundled Corrode ${resolved.manifest.version} (${resolved.manifest.commit || "unknown commit"})`);
+      }
       if (!resolved) {
         log(`Getting Corrode from ${source || corrode.releaseManifestUrl()}`);
         resolved = await corrode.resolveBundle(source);

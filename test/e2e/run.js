@@ -51,7 +51,9 @@ writeAsar(
 const original = fs.readFileSync(path.join(resources, "app.asar"));
 
 function aesdc(...args) {
-  const r = spawnSync(process.execPath, [cli, ...args, "--no-restart"], { env, encoding: "utf8" });
+  // AESDC_EXE tests a built executable (scripts/build-exe.js) instead of the source tree.
+  const [cmd, pre] = process.env.AESDC_EXE ? [path.resolve(process.env.AESDC_EXE), []] : [process.execPath, [cli]];
+  const r = spawnSync(cmd, [...pre, ...args, "--no-restart"], { env, encoding: "utf8" });
   process.stdout.write(r.stdout + r.stderr);
   assert.equal(r.status, 0, `aesdc ${args.join(" ")} failed`);
 }
