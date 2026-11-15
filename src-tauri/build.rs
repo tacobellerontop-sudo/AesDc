@@ -52,10 +52,20 @@ fn main() {
         }
     }
 
+    // What this build is, for update checks: its commit and when it was made.
+    println!("cargo:rerun-if-env-changed=GITHUB_SHA");
+    let commit = env::var("GITHUB_SHA").ok().filter(|s| !s.is_empty()).or_else(|| {
+        let out = std::process::Command::new("git").args(["rev-parse", "HEAD"]).current_dir(&manifest_dir).output().ok()?;
+        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    });
+    println!("cargo:rustc-env=AESDC_COMMIT={}", commit.unwrap_or_else(|| "unknown".into()));
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    println!("cargo:rustc-env=AESDC_BUILT_AT={now}");
+
     // Declare the app's commands so capabilities can grant them to Discord's (remote) pages.
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)))
         .expect("tauri build step failed");
 }
 
 /// Keep in sync with `generate_handler!` in src/lib.rs and capabilities/discord.json.
-const COMMANDS: &[&str] = &["storage_set", "storage_delete", "fetch_text", "relaunch", "open_devtools", "disable_corrode", "open_external"];
+const COMMANDS: &[&str] = &["storage_set", "storage_delete", "fetch_text", "relaunch", "open_devtools", "disable_corrode", "open_external", "update_check", "update_corrode", "update_client"];

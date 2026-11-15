@@ -72,6 +72,13 @@
       // In a standalone client, "uninstall" means: turn Corrode off and restart into plain Discord.
       // It can be turned back on from the tray menu.
       eject: () => invoke("disable_corrode"),
+      // Corrode's Updates page. updateCorrode downloads the newest Corrode (loaded after a
+      // restart); updateClient starts the AesDc installer (Windows) or opens the download page.
+      updates: Object.freeze({
+        check: () => invoke("update_check"),
+        updateCorrode: () => invoke("update_corrode"),
+        updateClient: () => invoke("update_client"),
+      }),
     }),
   });
 

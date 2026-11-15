@@ -74,6 +74,19 @@ Set `discordUrl` to `https://canary.discord.com/app` or `https://ptb.discord.com
 or PTB. To try a different Corrode build without rebuilding the client, put a `corrode.min.js` in
 the same folder. It is loaded instead of the built-in one.
 
+## Updates
+
+Corrode's settings have an **Updates** page (inside Discord's User Settings), and Corrode checks
+once each time it starts.
+
+- **Corrode** is published from its `main` branch as the
+  [`latest-main` release](https://github.com/tacobellerontop-sudo/corrode/releases/tag/latest-main).
+  "Update Corrode" downloads it into the settings folder (checksum verified) and the client loads
+  it after a restart. A downloaded Corrode is dropped again once you install a client that was
+  built later.
+- **AesDc**: "Update AesDc" downloads and starts the installer on Windows; on macOS and Linux it
+  opens the download page.
+
 ## Building
 
 You need [Rust](https://rustup.rs), Node.js 18+, and on Linux the WebKitGTK headers

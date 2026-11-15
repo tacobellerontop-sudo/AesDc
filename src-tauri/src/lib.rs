@@ -3,6 +3,7 @@
 //! into it before Discord's scripts run.
 mod inject;
 mod store;
+mod update;
 
 use std::{path::PathBuf, sync::Mutex, time::Duration};
 use store::{CorrodeStore, Settings};
@@ -25,6 +26,9 @@ const BRIDGE_PERMISSIONS: &[&str] = &[
     "allow-open-devtools",
     "allow-disable-corrode",
     "allow-open-external",
+    "allow-update-check",
+    "allow-update-corrode",
+    "allow-update-client",
 ];
 const MAX_FETCH_BYTES: usize = 20 * 1024 * 1024;
 
@@ -117,6 +121,39 @@ fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     app.opener().open_url(parsed.as_str(), None::<&str>).map_err(|e| e.to_string())
 }
 
+// ---- Updates (see update.rs) -------------------------------------------------------------------
+
+#[tauri::command]
+async fn update_check(state: tauri::State<'_, AppState>) -> Result<update::Info, String> {
+    let running = corrode_code(&state.dir);
+    Ok(update::check(running.as_ref()).await)
+}
+
+/// Downloads the latest Corrode. The page restarts the client afterwards to load it.
+#[tauri::command]
+async fn update_corrode(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let info = update::update_corrode(&state.dir).await?;
+    eprintln!("[AesDc] downloaded Corrode {} ({})", info.version, info.commit);
+    Ok(())
+}
+
+/// Windows: downloads the installer, starts it and quits so it can replace this program.
+/// Elsewhere: opens the download page.
+#[tauri::command]
+async fn update_client(app: AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let installer = update::download_installer().await?;
+        std::process::Command::new(&installer).spawn().map_err(|e| format!("Couldn't start the installer: {e}"))?;
+        app.exit(0);
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        app.opener().open_url(update::CLIENT_RELEASE_PAGE, None::<&str>).map_err(|e| e.to_string())
+    }
+}
+
 // ---- Window, tray, settings ------------------------------------------------------------------
 
 fn set_corrode_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
@@ -127,15 +164,9 @@ fn set_corrode_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
     app.restart();
 }
 
-/// Corrode's code: `<config dir>/corrode.min.js` if present (to try a newer build without
-/// rebuilding the client), otherwise the build embedded at compile time.
-fn corrode_code(dir: &PathBuf) -> Option<String> {
-    let override_file = dir.join("corrode.min.js");
-    if let Ok(code) = std::fs::read_to_string(&override_file) {
-        eprintln!("[AesDc] using Corrode from {}", override_file.display());
-        return Some(code);
-    }
-    Some(inject::EMBEDDED_CORRODE.to_string()).filter(|c| !c.trim().is_empty())
+/// The Corrode build to load: a downloaded update, a hand-placed file or the embedded build.
+fn corrode_code(dir: &PathBuf) -> Option<update::Corrode> {
+    update::load_corrode(dir, update::client_built_at(), inject::EMBEDDED_CORRODE)
 }
 
 /// The Discord URL to load. `AESDC_DISCORD_URL` overrides the setting (used by the tests).
@@ -173,7 +204,7 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         hosts.push(host);
     }
 
-    let corrode = if settings.corrode_enabled { corrode_code(&state.dir) } else { None };
+    let corrode = if settings.corrode_enabled { corrode_code(&state.dir).map(|c| c.code) } else { None };
     match corrode.as_deref() {
         Some(code) => eprintln!("[AesDc] Corrode {} enabled", inject::corrode_version(code).unwrap_or("(unknown version)")),
         None if settings.corrode_enabled => eprintln!("[AesDc] this build has no Corrode; running plain Discord"),
@@ -264,7 +295,10 @@ pub fn run() {
             relaunch,
             open_devtools,
             disable_corrode,
-            open_external
+            open_external,
+            update_check,
+            update_corrode,
+            update_client
         ])
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
