@@ -54,7 +54,7 @@ jobs:
 
       # Published builds must include Corrode.
       - name: Require Corrode for releases
-        if: github.event_name == 'push' && env.CORRODE_DIST == ''
+        if: github.event_name != 'pull_request' && env.CORRODE_DIST == ''
         shell: bash
         run: |
           echo "::error::No Corrode build found on corrode@${{ inputs.corrode_ref || 'main' }}; refusing to publish a client without it."
@@ -126,7 +126,7 @@ jobs:
   release:
     name: Publish
     needs: build
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

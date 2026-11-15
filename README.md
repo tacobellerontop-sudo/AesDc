@@ -14,7 +14,7 @@ AppImage is the exception at ~80 MB, because it carries its own WebKitGTK.
 
 ## Download
 
-Every push to `main` publishes builds on the
+Every push to `main` (or a manual run of the Build workflow) publishes builds on the
 [**latest-main** release](https://github.com/tacobellerontop-sudo/AesDc/releases/tag/latest-main):
 
 - **Windows:** `AesDc-setup-x64.exe` (installer), `AesDc-x64.msi`, or `AesDc-portable-x64.exe` (no install).
