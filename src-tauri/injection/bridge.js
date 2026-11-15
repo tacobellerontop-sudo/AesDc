@@ -6,6 +6,7 @@
 (() => {
   const cfg = __AESDC_CONFIG__;
   if (!cfg.hosts.includes(location.host) || window.CorrodeNative) return;
+  console.info(`[AesDc] client ${cfg.version} injected; Corrode ${cfg.corrode ? "enabled" : "off (turn it on from the tray)"}`);
 
   const internals = window.__TAURI_INTERNALS__;
   const invoke = (cmd, args) =>

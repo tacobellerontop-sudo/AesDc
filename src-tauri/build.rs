@@ -7,6 +7,8 @@ const SUPPORTED_API: &[u32] = &[1];
 
 fn main() {
     println!("cargo:rerun-if-env-changed=CORRODE_DIST");
+    println!("cargo:rerun-if-env-changed=AESDC_REQUIRE_CORRODE");
+    let required = env::var("AESDC_REQUIRE_CORRODE").map_or(false, |v| v == "1");
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let candidates = env::var("CORRODE_DIST")
         .map(|d| vec![PathBuf::from(d)])
@@ -40,6 +42,10 @@ fn main() {
             println!("cargo:warning=Embedding Corrode from {}", file.display());
             fs::write(&out, code).unwrap();
         }
+        None if required || env::var("CORRODE_DIST").is_ok() => panic!(
+            "No corrode.min.js found (CORRODE_DIST={:?}). Build Corrode first or unset CORRODE_DIST.",
+            env::var("CORRODE_DIST").ok()
+        ),
         None => {
             println!("cargo:warning=No Corrode build found (set CORRODE_DIST); the client will run Discord without Corrode");
             fs::write(&out, "").unwrap();

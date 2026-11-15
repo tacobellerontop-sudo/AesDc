@@ -46,7 +46,11 @@ jobs:
         shell: bash
         run: |
           cd corrode && npm ci && npm run build
-          echo "CORRODE_DIST=$PWD/dist" >> "$GITHUB_ENV"
+          dist="$PWD/dist"
+          # Git Bash paths (/d/a/...) mean nothing to cargo on Windows; pass a native path.
+          if [ "$RUNNER_OS" = "Windows" ]; then dist="$(cygpath -w "$dist")"; fi
+          echo "CORRODE_DIST=$dist" >> "$GITHUB_ENV"
+          echo "AESDC_REQUIRE_CORRODE=1" >> "$GITHUB_ENV"
 
       # Published builds must include Corrode.
       - name: Require Corrode for releases
@@ -87,6 +91,14 @@ jobs:
 
       - name: Build installers
         run: npm run build
+
+      - name: Check Corrode is inside the app
+        if: env.AESDC_REQUIRE_CORRODE == '1'
+        shell: bash
+        run: |
+          bin=src-tauri/target/release/aesdc; [ "$RUNNER_OS" = "Windows" ] && bin="$bin.exe"
+          grep -q "injector api v" "$bin" || { echo "::error::Corrode is not embedded in $bin"; exit 1; }
+          echo "Corrode is embedded in $bin"
 
       - name: Collect files
         shell: bash
