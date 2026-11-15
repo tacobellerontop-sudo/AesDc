@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "discord",
+  "description": "Lets Discord's pages call the client's commands (the CorrodeNative bridge).",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["https://discord.com/*", "https://ptb.discord.com/*", "https://canary.discord.com/*"]
+  },
+  "permissions": ["core:default", "allow-storage-set", "allow-storage-delete", "allow-fetch-text", "allow-relaunch", "allow-open-devtools", "allow-disable-corrode", "allow-open-external"]
+}

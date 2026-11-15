@@ -1,0 +1,55 @@
+// Embeds the Corrode bundle into the binary. Looks in $CORRODE_DIST, then ../corrode/dist next to
+// this repo. Without one, the client still builds and runs Discord without the mod.
+use std::{env, fs, path::PathBuf};
+
+/// Injector API versions (docs/INJECTOR.md in the corrode repo) this client implements.
+const SUPPORTED_API: &[u32] = &[1];
+
+fn main() {
+    println!("cargo:rerun-if-env-changed=CORRODE_DIST");
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let candidates = env::var("CORRODE_DIST")
+        .map(|d| vec![PathBuf::from(d)])
+        .unwrap_or_else(|_| vec![manifest_dir.join("../../corrode/dist")]);
+
+    let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("corrode.min.js");
+    let mut found = None;
+    for dir in candidates {
+        let file = dir.join("corrode.min.js");
+        println!("cargo:rerun-if-changed={}", file.display());
+        if let Ok(code) = fs::read_to_string(&file) {
+            found = Some((file, code));
+            break;
+        }
+    }
+
+    match found {
+        Some((file, code)) => {
+            let api = code
+                .get(..400)
+                .unwrap_or(&code)
+                .split("injector api v")
+                .nth(1)
+                .and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next())
+                .and_then(|n| n.parse::<u32>().ok());
+            match api {
+                Some(v) if SUPPORTED_API.contains(&v) => {}
+                Some(v) => panic!("{} uses Corrode injector API v{v}; this client supports {SUPPORTED_API:?}", file.display()),
+                None => panic!("{} has no Corrode banner; is it a Corrode build?", file.display()),
+            }
+            println!("cargo:warning=Embedding Corrode from {}", file.display());
+            fs::write(&out, code).unwrap();
+        }
+        None => {
+            println!("cargo:warning=No Corrode build found (set CORRODE_DIST); the client will run Discord without Corrode");
+            fs::write(&out, "").unwrap();
+        }
+    }
+
+    // Declare the app's commands so capabilities can grant them to Discord's (remote) pages.
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)))
+        .expect("tauri build step failed");
+}
+
+/// Keep in sync with `generate_handler!` in src/lib.rs and capabilities/discord.json.
+const COMMANDS: &[&str] = &["storage_set", "storage_delete", "fetch_text", "relaunch", "open_devtools", "disable_corrode", "open_external"];

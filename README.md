@@ -1,119 +1,106 @@
 # AesDc
 
-AesDc is the client and injector for [Corrode](https://github.com/tacobellerontop-sudo/corrode). It
-patches the Discord desktop app so Corrode loads before Discord's own code. It also has a built-in
-ejector that puts the original Discord back.
+AesDc is a lightweight Discord client with the [Corrode](https://github.com/tacobellerontop-sudo/corrode)
+mod built in. It works like Dorion: Discord's web app runs in the webview your operating system
+already has, and AesDc injects Corrode into the page. There's no bundled Chromium, so the app is
+about 8 MB (a 3 MB download) instead of the ~100 MB of an Electron client like Vesktop. The Linux
+AppImage is the exception at ~80 MB, because it carries its own WebKitGTK.
 
-It works with Discord Stable, PTB, Canary and Development on Windows, macOS and Linux, including
-the Flatpak. It needs Node.js 18 or newer and has no runtime dependencies.
+| OS | Webview |
+| --- | --- |
+| Windows 10/11 | WebView2 (Edge), already installed on almost every PC; the installer fetches it if not |
+| macOS | WKWebView (Safari) |
+| Linux | WebKitGTK |
 
 ## Download
 
-Every push to `main` builds `aesdc-windows-x64.exe` (plus Linux and macOS binaries) and publishes
-them on the [**latest-main** release](https://github.com/tacobellerontop-sudo/AesDc/releases/tag/latest-main).
-Tagging `v*` publishes a versioned release. Double-click the `.exe` to get the menu, or run it from
-a terminal with the commands below. It doesn't need Node.js. Windows SmartScreen will warn about it
-because it isn't code-signed: click **More info > Run anyway**.
+Every push to `main` publishes builds on the
+[**latest-main** release](https://github.com/tacobellerontop-sudo/AesDc/releases/tag/latest-main):
 
-The executable includes the Corrode build from Corrode's `main` branch when there is one. To bundle
-another branch, run the **Build executables** workflow manually and set `corrode_ref`.
+- **Windows:** `AesDc-setup-x64.exe` (installer), `AesDc-x64.msi`, or `AesDc-portable-x64.exe` (no install).
+- **macOS:** `AesDc-macos-arm64.dmg`. It isn't notarized, so right-click the app and choose **Open** the first time.
+- **Linux:** `.AppImage`, `.deb` or `.rpm`.
 
-## Usage from source
+Builds aren't code-signed yet, so Windows SmartScreen will warn: click **More info > Run anyway**.
+Tagging `v*` publishes a versioned release.
+
+## Features
+
+- Discord in its own window, with your login kept between launches.
+- Corrode loads before Discord's own scripts ("early" mode), so plugin patches reach every module.
+- Tray icon: show, reload, turn Corrode on or off, open DevTools, quit. On Windows, closing the
+  window hides it to the tray.
+- Opening the app a second time focuses the running window.
+- Links to other sites open in your normal browser.
+
+## How the injector works
+
+The window loads `https://discord.com/app` and registers one webview initialization script, which
+the webview runs in the page before any of Discord's scripts. It has two parts:
+
+1. [`injection/bridge.js`](src-tauri/injection/bridge.js) sets up `window.CorrodeNative`, the
+   bridge from Corrode's [`docs/INJECTOR.md`](https://github.com/tacobellerontop-sudo/corrode/blob/main/docs/INJECTOR.md)
+   (injector API v1). It also sends external links to the browser.
+2. Corrode itself (`corrode.min.js`), which is built into the binary.
+
+The bridge calls into the Rust side (`src-tauri/src/lib.rs`):
+
+| `CorrodeNative` | What it does |
+| --- | --- |
+| `storage` | Corrode's settings, saved to `corrode-storage.json` in the app's config folder. Reads are synchronous from an in-page copy, and every change is written through to the file. |
+| `fetchText` | Downloads remote plugins and themes from the Rust side (http and https only), so Discord's CSP and CORS don't block them. |
+| `relaunch` | Restarts the client. |
+| `openDevTools` | Opens the webview's DevTools. |
+| `eject` | Corrode's **Uninstall Corrode** button. It turns Corrode off and restarts into plain Discord. Turn it back on from the tray. |
+
+Only Discord's own pages (`discord.com`, `ptb.discord.com`, `canary.discord.com`) get the bridge
+(see [`capabilities/discord.json`](src-tauri/capabilities/discord.json)).
+
+## Settings
+
+The client's settings live in `settings.json` in the app config folder
+(`%APPDATA%\dev.aesdc.client`, `~/Library/Application Support/dev.aesdc.client` or
+`~/.config/dev.aesdc.client`):
+
+```json
+{
+  "corrodeEnabled": true,
+  "closeToTray": true,
+  "discordUrl": "https://discord.com/app"
+}
+```
+
+Set `discordUrl` to `https://canary.discord.com/app` or `https://ptb.discord.com/app` for Canary
+or PTB. To try a different Corrode build without rebuilding the client, put a `corrode.min.js` in
+the same folder. It is loaded instead of the built-in one.
+
+## Building
+
+You need [Rust](https://rustup.rs), Node.js 18+, and on Linux the WebKitGTK headers
+(`libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`).
 
 ```sh
-git clone https://github.com/tacobellerontop-sudo/AesDc && cd AesDc
-node bin/aesdc.js            # interactive menu
-node bin/aesdc.js gui        # installer page in your browser
-```
+# Build Corrode next to this repo (or set CORRODE_DIST to its dist/ folder)
+git clone https://github.com/tacobellerontop-sudo/corrode ../corrode
+(cd ../corrode && npm ci && npm run build)
 
-Or use the commands directly:
-
-| Command | What it does |
-| --- | --- |
-| `aesdc status` | Lists the Discord installs it found and whether Corrode is installed in each. |
-| `aesdc install [stable\|ptb\|canary\|all]` | Downloads Corrode and patches Discord. |
-| `aesdc uninstall [target]` | The ejector: restores the original Discord. Add `--purge` to also delete Corrode's settings. |
-| `aesdc repair` | Re-applies the patch after a Discord update removed it. |
-| `aesdc update` | Downloads the latest Corrode. Restart Discord afterwards. |
-
-Useful options:
-
-- `--corrode <src>` picks the Corrode build. It takes a `corrode/dist` folder, a `corrode.min.js`
-  file, or a `manifest.json` URL. The default is the latest GitHub release of Corrode. Until Corrode
-  has a release, build it (`npm run build` in the corrode repo) and pass `--corrode ../corrode/dist`.
-- `--path <dir>` uses a Discord install in a place AesDc doesn't search.
-- `--no-restart` leaves Discord running. Normally AesDc closes Discord, patches it and starts it again.
-
-Corrode's own **Settings > About > Uninstall Corrode** button runs the same ejector from inside
-Discord and then restarts it.
-
-## How it works
-
-```
-resources/app.asar  ->  resources/_app.asar   Discord's original app, never modified
-                        resources/app/        small shim written by AesDc
-```
-
-Electron loads `resources/app/` before `app.asar`. The shim starts the AesDc runtime, then boots
-`_app.asar` exactly as Electron would have. The runtime hooks Discord's main window so that AesDc's
-preload runs first. That preload exposes `window.CorrodeNative` and evaluates Corrode in the page
-before Discord's scripts run (Corrode's "early" mode), then runs Discord's own preload. This
-follows the contract in Corrode's [`docs/INJECTOR.md`](https://github.com/tacobellerontop-sudo/corrode/blob/main/docs/INJECTOR.md)
-(injector API v1).
-
-The bridge gives Corrode:
-
-| `CorrodeNative` | Backed by |
-| --- | --- |
-| `storage` | A JSON file per Discord flavor in the data folder, so settings survive Discord logouts. |
-| `fetchText` | The main process (http and https only), so remote plugins and themes skip CORS and CSP. |
-| `relaunch`, `openDevTools` | Electron. |
-| `eject` | The built-in ejector, followed by a restart. |
-
-Ejecting moves `_app.asar` back to `app.asar` and deletes `resources/app/`, so Discord is byte for
-byte what it was. If Discord replaced `app.asar` itself in the meantime, the newer file is kept.
-AesDc never touches a `resources/app/` folder it didn't create, such as one from another client mod.
-
-Files on disk, in the data folder (`%APPDATA%\AesDc`, `~/Library/Application Support/AesDc` or
-`~/.config/AesDc`):
-
-```
-host/       the runtime Discord loads (refreshed by install, repair and update)
-corrode/    corrode.min.js and its manifest.json
-storage/    Corrode's settings, one file per Discord flavor
-installs.json
-```
-
-Corrode downloads are checked against the injector API version AesDc supports and the sha256 in
-Corrode's `manifest.json`.
-
-## Platform notes
-
-- **Windows:** Discord locks its files while running, so AesDc closes it first. Discord installs
-  updates into a new `app-x.y.z` folder; the runtime patches the new folder automatically, so
-  Corrode survives updates.
-- **macOS:** Your terminal needs **App Management** permission (System Settings > Privacy &
-  Security) to change `/Applications/Discord.app`. Discord updates replace the app, so run
-  `aesdc repair` after one.
-- **Linux:** Installs under `/usr` or `/opt` need `sudo node bin/aesdc.js install`. AesDc still
-  keeps Corrode's data in your own home folder and won't start Discord as root. Run
-  `aesdc repair` after your package manager updates Discord. The Flatpak works, with its data in
-  `~/.var/app/com.discordapp.Discord/config/AesDc` because the sandbox can't read `~/.config`.
-  The Snap is read-only and can't be patched.
-
-## Development
-
-```sh
 npm install
-npm test                       # unit tests: injection, ejection, discovery, installer
-xvfb-run -a npm run test:e2e   # boots a fake Discord in real Electron (drop xvfb-run on a desktop)
-npm run build:exe              # build/aesdc(.exe) for this OS; set CORRODE_DIST to bundle Corrode
+npm run dev      # run the client
+npm run build    # installers in src-tauri/target/release/bundle/
 ```
 
-`AESDC_EXE=build/aesdc npm run test:e2e` runs the end-to-end test against the built executable.
+Without a Corrode build, the client still builds and runs plain Discord.
 
-The end-to-end test builds a fake Discord (Electron plus an `app.asar` shaped like Discord's main
-window), installs Corrode with the real CLI, checks that Corrode loads early with the bridge and
-Discord's own preload still running, ejects from inside the app, and checks that `app.asar` is
-back byte for byte. It uses `../corrode/dist` when it exists (set `CORRODE_DIST` to change that)
-and a stub bundle otherwise.
+## Tests
+
+```sh
+cargo test --manifest-path src-tauri/Cargo.toml   # unit tests
+cargo build --manifest-path src-tauri/Cargo.toml
+xvfb-run -a node test/e2e.js                      # drop xvfb-run on a desktop
+```
+
+The end-to-end test starts the real client pointed at a fake Discord page on `127.0.0.1`
+(`AESDC_DISCORD_URL`). From inside the page it checks that Corrode ran before the page's first
+script, that storage, `fetchText` and link handling work, and that settings reach the file. It
+then presses "Uninstall Corrode" and checks that the client restarts without Corrode and keeps
+its settings.

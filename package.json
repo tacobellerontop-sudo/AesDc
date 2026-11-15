@@ -1,26 +1,15 @@
 {
   "name": "aesdc",
-  "version": "0.1.0",
-  "description": "Client and injector for the Corrode Discord mod: patches the Discord desktop app to load Corrode, with a built-in ejector.",
-  "bin": {
-    "aesdc": "bin/aesdc.js"
-  },
-  "files": [
-    "bin",
-    "src",
-    "runtime"
-  ],
-  "engines": {
-    "node": ">=18"
-  },
+  "private": true,
+  "version": "0.2.0",
+  "description": "A lightweight Discord client with the Corrode mod built in.",
   "scripts": {
-    "test": "node --test \"test/*.test.js\"",
-    "test:e2e": "node test/e2e/run.js",
-    "build:exe": "node scripts/build-exe.js"
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "test:e2e": "node test/e2e.js"
   },
   "devDependencies": {
-    "electron": "33.4.11",
-    "esbuild": "^0.24.2",
-    "postject": "^1.0.0-alpha.6"
+    "@tauri-apps/cli": "^2"
   }
 }

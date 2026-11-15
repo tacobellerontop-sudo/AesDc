@@ -1,0 +1,128 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      corrode_ref:
+        description: Corrode branch, tag or commit to build into the client
+        default: main
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: windows-x64 }
+          - { os: macos-latest, name: macos-arm64 }
+          - { os: ubuntu-22.04, name: linux-x64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      # Corrode is built into the client. Without a Corrode build the client runs plain Discord.
+      - name: Check out Corrode
+        uses: actions/checkout@v4
+        with:
+          repository: tacobellerontop-sudo/corrode
+          ref: ${{ inputs.corrode_ref || 'main' }}
+          path: corrode
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build Corrode
+        if: hashFiles('corrode/package.json') != ''
+        shell: bash
+        run: |
+          cd corrode && npm ci && npm run build
+          echo "CORRODE_DIST=$PWD/dist" >> "$GITHUB_ENV"
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev xvfb
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+
+      - name: Unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: End-to-end test (real webview)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -z "$CORRODE_DIST" ]; then
+            # No Corrode on this ref yet: test the injector with a stub that follows the same contract.
+            mkdir -p "$RUNNER_TEMP/stub"
+            printf '%s\n' '/*! Corrode v0.0.0-stub (stub) | MIT | injector api v1 */' \
+              '(()=>{if(window.corrode)return;Object.defineProperty(window,"corrode",{value:{version:"0.0.0-stub",loadMode:window.webpackChunkdiscord_app?"late":"early",unload(){}},configurable:true})})();' \
+              > "$RUNNER_TEMP/stub/corrode.min.js"
+            export CORRODE_DIST="$RUNNER_TEMP/stub"
+          fi
+          cargo build --manifest-path src-tauri/Cargo.toml
+          xvfb-run -a node test/e2e.js
+
+      - name: Build installers
+        run: npm run build
+
+      - name: Collect files
+        shell: bash
+        run: |
+          mkdir -p out
+          b=src-tauri/target/release/bundle
+          case "${{ runner.os }}" in
+            Windows)
+              cp $b/nsis/*.exe out/AesDc-setup-x64.exe
+              cp $b/msi/*.msi out/AesDc-x64.msi
+              cp src-tauri/target/release/aesdc.exe out/AesDc-portable-x64.exe ;;
+            macOS)
+              cp $b/dmg/*.dmg out/AesDc-macos-arm64.dmg ;;
+            Linux)
+              cp $b/appimage/*.AppImage out/AesDc-linux-x64.AppImage
+              cp $b/deb/*.deb out/AesDc-linux-x64.deb
+              cp $b/rpm/*.rpm out/AesDc-linux-x64.rpm ;;
+          esac
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aesdc-${{ matrix.name }}
+          path: out/*
+
+  release:
+    name: Publish
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            gh release create "$GITHUB_REF_NAME" out/* --title "AesDc $GITHUB_REF_NAME" --generate-notes
+          else
+            gh release delete latest-main --cleanup-tag --yes || true
+            gh release create latest-main out/* --prerelease --target "$GITHUB_SHA" \
+              --title "AesDc (latest main)" \
+              --notes "Built from ${GITHUB_SHA::7}. On Windows, run AesDc-setup-x64.exe (or AesDc-portable-x64.exe without installing)."
+          fi

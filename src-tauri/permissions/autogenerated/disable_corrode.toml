@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-disable-corrode"
+description = "Enables the disable_corrode command without any pre-configured scope."
+commands.allow = ["disable_corrode"]
+
+[[permission]]
+identifier = "deny-disable-corrode"
+description = "Denies the disable_corrode command without any pre-configured scope."
+commands.deny = ["disable_corrode"]
