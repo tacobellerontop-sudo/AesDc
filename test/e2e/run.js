@@ -60,7 +60,7 @@ function aesdc(...args) {
 
 function boot(action) {
   const out = path.join(work, `${action}.json`);
-  const args = process.getuid && process.getuid() === 0 ? ["--no-sandbox"] : [];
+  const args = process.platform === "linux" ? ["--no-sandbox"] : [];
   const r = spawnSync(exe, [...args, "--disable-gpu"], { env: { ...env, E2E_OUT: out, E2E_ACTION: action }, encoding: "utf8", timeout: 30000, killSignal: "SIGKILL" });
   if (!fs.existsSync(out)) {
     console.log(r.stdout, r.stderr);

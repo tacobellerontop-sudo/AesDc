@@ -78,16 +78,16 @@ test("corrode sources: dist folder, single file, API mismatch and bad checksum",
   await assert.rejects(corrode.resolveBundle(dist), /sha256/);
 });
 
-test("install, repair after a Discord update, uninstall --purge (Linux layout)", { skip: process.platform === "win32" }, async () => {
+test("install, repair after a Discord update, uninstall --purge", async () => {
   const res = fakeResources(path.join(home, ".local", "share", "discord", "resources"));
   const original = fs.readFileSync(path.join(res, "app.asar"));
   const dataDir = process.env.AESDC_DATA_DIR;
-  const installs = () => discord.findInstalls().filter((i) => i.root.startsWith(home));
+  const installs = () => [discord.installFromPath(res)];
   const logs = [];
   const log = (m) => logs.push(m);
 
   let results = await installer.install({ installs: installs(), source: fakeCorrodeDist(), restart: false, log });
-  assert.deepEqual(results, [{ id: "stable", ok: true }]);
+  assert.deepEqual(results, [{ id: "custom", ok: true }]);
   assert.equal(installs()[0].state, "injected");
   assert.ok(fs.existsSync(path.join(dataDir, "host", "runtime", "main.js")));
   assert.ok(fs.existsSync(path.join(dataDir, "host", "src", "inject.js")));
@@ -103,11 +103,11 @@ test("install, repair after a Discord update, uninstall --purge (Linux layout)",
   const upgraded = fs.readFileSync(path.join(res, "app.asar"));
   assert.equal(installs()[0].state, "clean");
   results = await installer.repair({ installs: installs(), restart: false, log });
-  assert.deepEqual(results, [{ id: "stable", ok: true }]);
+  assert.deepEqual(results, [{ id: "custom", ok: true }]);
   assert.equal(installs()[0].state, "injected");
 
   results = await installer.uninstall({ installs: installs(), purge: true, restart: false, log });
-  assert.deepEqual(results, [{ id: "stable", ok: true }]);
+  assert.deepEqual(results, [{ id: "custom", ok: true }]);
   assert.equal(installs()[0].state, "clean");
   assert.deepEqual(fs.readFileSync(path.join(res, "app.asar")), upgraded);
   assert.notDeepEqual(upgraded, original);
