@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AesDc Installer</title>
+<style>
+  :root { --bg:#f6f6f8; --card:#fff; --fg:#1d1d22; --muted:#6b6b76; --line:#e2e2e8; --accent:#c2410c; --accent-fg:#fff; --ok:#15803d; --warn:#b45309; --bad:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141417; --card:#1d1d22; --fg:#ececf1; --muted:#9a9aa6; --line:#2e2e36; --accent:#ea580c; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+  label.install { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+  label.install.disabled { cursor: default; opacity: .6; }
+  input[type=checkbox] { margin-top: 4px; width: 16px; height: 16px; accent-color: var(--accent); }
+  .name { font-weight: 600; }
+  .path { color: var(--muted); font-size: 12px; word-break: break-all; }
+  .badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; margin-left: 6px; }
+  .state-injected { color: var(--ok); } .state-outdated, .state-broken { color: var(--warn); } .state-foreign { color: var(--bad); } .state-clean { color: var(--muted); }
+  .note { font-size: 13px; color: var(--warn); margin-top: 2px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  button:disabled { opacity: .5; cursor: progress; }
+  details { margin: 8px 0 16px; color: var(--muted); }
+  details input[type=text] { width: 100%; margin-top: 6px; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--fg); font: inherit; }
+  .opts { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 14px; }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; white-space: pre-wrap; font-size: 13px; min-height: 3em; margin: 0; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>AesDc</h1>
+  <p class="sub" id="sub">Loading…</p>
+  <div id="installs"></div>
+  <details>
+    <summary>Corrode source</summary>
+    <input type="text" id="source" placeholder="Latest GitHub release (or a path to corrode/dist, or a manifest.json URL)">
+  </details>
+  <div class="row">
+    <button class="primary" id="install">Install</button>
+    <button id="uninstall">Uninstall</button>
+    <button id="repair">Repair</button>
+    <button id="update">Update Corrode</button>
+  </div>
+  <label class="opts"><input type="checkbox" id="purge"> When uninstalling, also delete Corrode's settings</label>
+  <p class="sub" style="margin:16px 0 6px">Discord is closed and restarted automatically when needed.</p>
+  <pre id="log"></pre>
+</main>
+<script>
+const TOKEN = "__TOKEN__";
+const $ = (id) => document.getElementById(id);
+const STATE = { clean: "Not installed", injected: "Installed", outdated: "Discord updated: repair", foreign: "Another mod installed", broken: "Broken", missing: "Missing" };
+const api = async (method, path, body) => {
+  const res = await fetch(path, { method, headers: { "x-aesdc-token": TOKEN, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+};
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+async function refresh() {
+  const s = await api("GET", "/api/status");
+  $("sub").textContent = `AesDc ${s.aesdc} · Corrode ${s.corrode ? s.corrode.version : "not downloaded yet"}`;
+  if (s.defaultSource && !$("source").value) $("source").value = s.defaultSource;
+  const checked = new Set([...document.querySelectorAll("#installs input:checked")].map((i) => i.value));
+  $("installs").innerHTML = s.installs.length ? s.installs.map((i) => {
+    const notes = [];
+    if (!i.supported) notes.push(i.unsupportedReason);
+    else if (i.needsElevation) notes.push(s.platform === "win32" ? "Run AesDc as administrator to change this install." : "Run AesDc with sudo to change this install.");
+    if (i.runtimeMissing) notes.push("AesDc's files are missing; click Repair.");
+    if (i.running) notes.push("Running: it will be restarted.");
+    const state = i.runtimeMissing ? "broken" : i.state;
+    return `<div class="card"><label class="install ${i.supported ? "" : "disabled"}">
+      <input type="checkbox" value="${esc(i.id)}" ${i.supported ? "" : "disabled"} ${checked.has(i.id) || (s.installs.length === 1 && i.supported) ? "checked" : ""}>
+      <div><div><span class="name">${esc(i.label)}</span> ${esc(i.version || "")}<span class="badge state-${esc(state)}">${esc(STATE[i.state] || i.state)}</span></div>
+      <div class="path">${esc(i.resourcesDir)}</div>${notes.map((n) => `<div class="note">${esc(n)}</div>`).join("")}</div></label></div>`;
+  }).join("") : `<div class="card">No Discord installation found. Install Discord from discord.com, or use <code>aesdc install --path &lt;folder&gt;</code>.</div>`;
+}
+
+async function run(action) {
+  const targets = [...document.querySelectorAll("#installs input:checked")].map((i) => i.value);
+  if ((action === "install" || action === "uninstall") && !targets.length) return void ($("log").textContent = "Pick a Discord install first.");
+  document.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  $("log").textContent = "Working…";
+  try {
+    const r = await api("POST", `/api/${action}`, { targets, purge: $("purge").checked, corrode: $("source").value });
+    $("log").innerHTML = [...r.log.map(esc), ...r.results.map((x) => x.ok ? `<span class="ok">✓ ${esc(x.id || x.dataDir)}${x.skipped ? ` (${esc(x.skipped)})` : ""}</span>` : `<span class="bad">✗ ${esc(x.id || "")} ${esc(x.error)}</span>`)].join("\n") || "Done.";
+  } catch (err) {
+    $("log").innerHTML = `<span class="bad">${esc(err.message)}</span>`;
+  } finally {
+    document.querySelectorAll("button").forEach((b) => (b.disabled = false));
+    refresh().catch(() => {});
+  }
+}
+
+for (const a of ["install", "uninstall", "repair", "update"]) $(a).onclick = () => run(a);
+refresh().catch((err) => ($("sub").textContent = err.message));
+</script>
+</body>
+</html>

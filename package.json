@@ -1,0 +1,23 @@
+{
+  "name": "aesdc",
+  "version": "0.1.0",
+  "description": "Client and injector for the Corrode Discord mod: patches the Discord desktop app to load Corrode, with a built-in ejector.",
+  "bin": {
+    "aesdc": "bin/aesdc.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "runtime"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "test:e2e": "node test/e2e/run.js"
+  },
+  "devDependencies": {
+    "electron": "33.4.11"
+  }
+}
