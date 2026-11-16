@@ -22,6 +22,7 @@
   const FALLBACK_HEIGHT = mac ? 28 : 30;
   const CSS = `
 #aesdc-winctl { display: flex; align-self: stretch; height: 100%; margin-left: 4px; flex: none; -webkit-app-region: no-drag; }
+[data-aesdc-bar] > #aesdc-winctl { margin-left: auto; }
 #aesdc-winctl button { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center;
   width: 40px; height: 100%; min-height: 24px; color: var(--interactive-normal, #b5bac1); cursor: default; }
 #aesdc-winctl button:hover { background: var(--background-modifier-hover, rgba(255,255,255,.08)); color: var(--interactive-hover, #dbdee1); }
@@ -113,19 +114,44 @@ html[data-aesdc-fullscreen] #app-mount { top: 0 !important; }
     const r = el.getBoundingClientRect();
     return r.top - m.top <= 1 && r.left - m.left <= 1 && r.width >= m.width - 2 && r.height >= 20 && r.height <= 64;
   };
+  // Discord's hashed class names come as "bar_c38106" or, in newer builds, "c38106-bar" (with
+  // any prefix). True if one of the element's classes is one of these names in either form.
+  const hasPart = (el, names) =>
+    !!el.classList &&
+    [...el.classList].some((c) => names.some((n) => c.startsWith(n + "_") || c.endsWith("-" + n) || c.endsWith("_" + n)));
+  const clickable = 'button, [role="button"], a[href]';
   const findBar = () => {
     const mount = document.getElementById("app-mount");
     if (!mount) return null;
-    // The 2024+ top bar, then the older Windows-app title bar. Both must also have the shape of
-    // a title bar, which rules out other things whose hashed name starts the same way.
-    for (const sel of ['[class^="bar_"]', '[class*=" bar_"]', '[class^="titleBar_"]', '[class*=" titleBar_"]']) {
-      for (const el of mount.querySelectorAll(sel)) if (looksLikeBar(el)) return el;
+    // 1. By name: the 2024+ top bar, or the older Windows-app title bar, with a title bar's shape.
+    for (const el of mount.querySelectorAll('[class*="bar"], [class*="Bar"]')) {
+      if (hasPart(el, ["bar", "titleBar"]) && looksLikeBar(el)) return el;
     }
-    return null;
+    // 2. By position: the widest bar-shaped element holding whatever sits in the app's top-right
+    // corner (Discord's help button), as long as it has buttons of its own.
+    const m = mount.getBoundingClientRect();
+    let el = document.elementFromPoint(m.right - 14, m.top + 14);
+    if (!el || !mount.contains(el) || el.closest("#aesdc-titlebar")) return null;
+    let best = null;
+    for (; el && el !== mount; el = el.parentElement) if (looksLikeBar(el) && el.querySelector(clickable)) best = el;
+    return best;
   };
   // Where the buttons go inside the bar: its right-hand section if it has one.
-  const trailingOf = (bar) =>
-    [...bar.children].reverse().find((c) => /(^|\s)(trailing|actions|toolbar)[_-]/.test(String(c.className))) || bar;
+  const trailingOf = (bar) => [...bar.children].reverse().find((c) => hasPart(c, ["trailing", "actions", "toolbar"])) || bar;
+  // For bug reports: run __aesdcTitlebarInfo() in DevTools to see what the titlebar found.
+  Object.defineProperty(window, "__aesdcTitlebarInfo", {
+    value: () => {
+      const mount = document.getElementById("app-mount");
+      const m = mount && mount.getBoundingClientRect();
+      const top = m && document.elementFromPoint(m.right - 14, m.top + 14);
+      const chain = [];
+      for (let el = top; el && el !== mount; el = el.parentElement) {
+        const r = el.getBoundingClientRect();
+        chain.push(`${el.tagName.toLowerCase()}.${[...el.classList].join(".")} ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`);
+      }
+      return { bar: bar ? bar.className : null, fallback: document.documentElement.hasAttribute("data-aesdc-fallback"), topRight: chain };
+    },
+  });
 
   let bar = null;
   const place = () => {
