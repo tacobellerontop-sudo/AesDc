@@ -2,6 +2,7 @@
 //! webview (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux) and Corrode is injected
 //! into it before Discord's scripts run.
 mod inject;
+mod perf;
 mod store;
 mod themes;
 mod update;
@@ -46,6 +47,8 @@ struct AppState {
     settings: Mutex<Settings>,
     corrode_store: Mutex<CorrodeStore>,
     tray: Mutex<bool>,
+    /// Whether the webview was last told it is out of sight (see perf.rs).
+    background: Mutex<bool>,
 }
 
 impl AppState {
@@ -330,7 +333,8 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .title("AesDc")
         .inner_size(1280.0, 800.0)
         .min_inner_size(940.0, 500.0)
-        .initialization_script(&script);
+        .initialization_script(&script)
+        .additional_browser_args(&perf::browser_args(settings.low_memory_mode, &settings.extra_browser_args));
     build_frame(builder, settings.custom_titlebar).build()
 }
 
@@ -362,6 +366,20 @@ fn show_main(app: &AppHandle) {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
+        sync_background(app);
+    }
+}
+
+/// Puts the webview in or out of its background state (see perf.rs) to match the window:
+/// in the background while minimized or hidden to the tray.
+fn sync_background(app: &AppHandle) {
+    let Some(w) = app.get_webview_window(MAIN) else { return };
+    let background = !w.is_visible().unwrap_or(true) || w.is_minimized().unwrap_or(false);
+    let state = app.state::<AppState>();
+    let mut last = state.background.lock().unwrap();
+    if *last != background {
+        *last = background;
+        perf::set_background(&w, background);
     }
 }
 
@@ -372,10 +390,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let corrode = CheckMenuItem::with_id(app, "corrode", "Load Corrode", true, enabled, None::<&str>)?;
     let custom_titlebar = app.state::<AppState>().settings.lock().unwrap().custom_titlebar;
     let titlebar = CheckMenuItem::with_id(app, "titlebar", "Custom titlebar", true, custom_titlebar, None::<&str>)?;
+    let low_memory_mode = app.state::<AppState>().settings.lock().unwrap().low_memory_mode;
+    let low_memory = CheckMenuItem::with_id(app, "lowmemory", "Low memory mode (next launch)", true, low_memory_mode, None::<&str>)?;
     let devtools = MenuItem::with_id(app, "devtools", "Open DevTools", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit AesDc", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &reload, &corrode, &titlebar, &devtools, &sep, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &reload, &corrode, &titlebar, &low_memory, &devtools, &sep, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("AesDc")
@@ -396,6 +416,16 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             }
             "titlebar" => {
                 if let Err(e) = change_settings_and_restart(app, |s| s.custom_titlebar = !s.custom_titlebar) {
+                    eprintln!("[AesDc] could not save settings: {e}");
+                }
+            }
+            // Saved only. WebView2's arguments can't change while its processes are still
+            // running, and they can outlive a quick restart, so this applies at the next launch.
+            "lowmemory" => {
+                let state = app.state::<AppState>();
+                let mut s = state.settings.lock().unwrap();
+                s.low_memory_mode = !s.low_memory_mode;
+                if let Err(e) = state.save_settings(&s) {
                     eprintln!("[AesDc] could not save settings: {e}");
                 }
             }
@@ -448,7 +478,7 @@ pub fn run() {
             let dir = app.path().app_config_dir()?;
             let settings: Settings = store::load(&dir.join("settings.json"));
             let corrode_store: CorrodeStore = store::load(&dir.join("corrode-storage.json"));
-            app.manage(AppState { dir, settings: Mutex::new(settings), corrode_store: Mutex::new(corrode_store), tray: Mutex::new(false) });
+            app.manage(AppState { dir, settings: Mutex::new(settings), corrode_store: Mutex::new(corrode_store), tray: Mutex::new(false), background: Mutex::new(false) });
 
             let handle = app.handle().clone();
             match build_tray(&handle) {
@@ -459,15 +489,19 @@ pub fn run() {
             create_main_window(&handle)?;
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => {
                 let state = window.state::<AppState>();
                 let to_tray = state.settings.lock().unwrap().close_to_tray && *state.tray.lock().unwrap();
                 if to_tray {
                     api.prevent_close();
                     let _ = window.hide();
+                    sync_background(window.app_handle());
                 }
             }
+            // Minimizing and restoring arrive as a resize; focus covers the rest.
+            WindowEvent::Resized(_) | WindowEvent::Focused(_) => sync_background(window.app_handle()),
+            _ => {}
         })
         .run(tauri::generate_context!())
         .expect("error while running AesDc");

@@ -154,6 +154,7 @@ html[data-aesdc-fullscreen] #app-mount { top: 0 !important; }
   });
 
   let bar = null;
+  let shapeCheckedAt = 0;
   const place = () => {
     if (!document.body) return;
     if (!document.getElementById("aesdc-style")) {
@@ -166,7 +167,14 @@ html[data-aesdc-fullscreen] #app-mount { top: 0 !important; }
     fallback ||= makeFallback();
     if (!fallback.isConnected) document.body.append(fallback);
     // Nothing moved: skip the search, which runs after every change Discord makes to the page.
-    if (bar && bar.isConnected && bar.contains(controls) && looksLikeBar(bar)) return;
+    // Measuring the bar's shape forces a layout, so do it at most once a second (and after a
+    // resize), not on every frame in which Discord changed something.
+    if (bar && bar.isConnected && bar.contains(controls)) {
+      const now = performance.now();
+      if (now - shapeCheckedAt < 1000) return;
+      shapeCheckedAt = now;
+      if (looksLikeBar(bar)) return;
+    }
 
     const found = findBar();
     if (bar && bar !== found) bar.removeAttribute("data-aesdc-bar");
@@ -213,6 +221,7 @@ html[data-aesdc-fullscreen] #app-mount { top: 0 !important; }
     new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
     let resizeTimer = 0;
     window.addEventListener("resize", () => {
+      shapeCheckedAt = 0;
       schedule();
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(refreshState, 120);

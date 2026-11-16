@@ -78,13 +78,43 @@ The client's settings live in `settings.json` in the app config folder
   "corrodeEnabled": true,
   "closeToTray": true,
   "discordUrl": "https://discord.com/app",
-  "customTitlebar": true
+  "customTitlebar": true,
+  "lowMemoryMode": false,
+  "extraBrowserArgs": ""
 }
 ```
 
 Set `discordUrl` to `https://canary.discord.com/app` or `https://ptb.discord.com/app` for Canary
 or PTB. To try a different Corrode build without rebuilding the client, put a `corrode.min.js` in
 the same folder. It is loaded instead of the built-in one.
+
+## Memory and CPU
+
+AesDc.exe itself is small. Discord's web app runs in WebView2's own processes
+(`msedgewebview2.exe`, shown under AesDc in Task Manager), and most of their memory is Discord's
+JavaScript, which no client can remove. Every webview-based client (Vesktop, Dorion, a browser
+tab) pays the same cost. What AesDc does about the rest:
+
+- WebView2 starts without browser features a chat client doesn't use: the spare renderer process
+  kept warm for page loads, cast-device discovery on the network, and the translate service.
+- When the window is minimized or closed to the tray, the page is told it is hidden (Chromium
+  then throttles its timers and stops drawing) and WebView2 is asked to trim its memory. Messages,
+  notifications and calls keep working, as in a background browser tab.
+- Corrode stops watching the themes folder while the window is hidden, and its page watchers run
+  a few times a second instead of on every frame.
+
+**Low memory mode** (tray menu, or `"lowMemoryMode": true`; applies at the next launch) lets
+Discord's embeds (YouTube, Spotify, captchas) share Discord's process instead of getting one
+each. It saves memory, but the sites Discord embeds are no longer isolated from Discord.
+
+`extraBrowserArgs` adds your own WebView2 flags (Windows), for example `--disable-gpu`, which
+moves drawing from the GPU process to the CPU. Its `--disable-features` list is merged with
+AesDc's.
+
+To compare before and after: quit AesDc fully (tray, Quit), start it, wait two minutes on the
+same channel, then in Task Manager's Details tab add up the Memory (active private working set)
+of `AesDc.exe` and every `msedgewebview2.exe` whose command line contains `dev.aesdc.client`.
+Then minimize the window, wait a minute and look again.
 
 ## Updates
 

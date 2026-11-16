@@ -22,6 +22,12 @@ sha2 = "0.10"
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
+# Talks to WebView2 directly for the hidden-window memory trim (see src/perf.rs). Same versions
+# as wry uses, so nothing new is built.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows-core = "0.62"
+
 [profile.release]
 codegen-units = 1
 lto = true
