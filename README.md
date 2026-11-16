@@ -61,6 +61,7 @@ The bridge calls into the Rust side (`src-tauri/src/lib.rs`):
 | `relaunch` | Restarts the client. |
 | `openDevTools` | Opens the webview's DevTools. |
 | `window` | AesDc only, for the custom titlebar: `minimize`, `toggleMaximize`, `close` (close-to-tray still applies), `startDrag` and `state`. Each resolves to `{ maximized, fullscreen, focused, decorated }`. |
+| `themes` | The themes folder, `themes` in the app's config folder. `.css` files you put there show up on Corrode's **Themes** page, and Corrode's theme creator saves its themes there. Background pictures and videos go in `themes/media`. Only bare file names are accepted, so the page can't reach files outside that folder. |
 | `eject` | Corrode's **Uninstall Corrode** button. It turns Corrode off and restarts into plain Discord. Turn it back on from the tray. |
 
 Only Discord's own pages (`discord.com`, `ptb.discord.com`, `canary.discord.com`) get the bridge

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-themes-write"
+description = "Enables the themes_write command without any pre-configured scope."
+commands.allow = ["themes_write"]
+
+[[permission]]
+identifier = "deny-themes-write"
+description = "Denies the themes_write command without any pre-configured scope."
+commands.deny = ["themes_write"]

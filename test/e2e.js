@@ -2,9 +2,9 @@
 // End-to-end test of the real client: serves a fake Discord page on 127.0.0.1, starts the AesDc
 // binary pointed at it (AESDC_DISCORD_URL), and checks from inside the page that Corrode ran
 // before the page's first script, the CorrodeNative bridge works, settings reach the settings
-// file, links are kept out of the client, an update check finds a newer Corrode, downloads it and
-// loads it after a restart, the custom titlebar sits in Discord's top bar, and "Uninstall Corrode"
-// restarts into plain Discord.
+// file, links are kept out of the client, the themes folder works, an update check finds a newer
+// Corrode, downloads it and loads it after a restart, the custom titlebar sits in Discord's top
+// bar, and "Uninstall Corrode" restarts into plain Discord.
 //
 // Usage: node test/e2e.js [path/to/aesdc binary]   (Linux needs a display: xvfb-run -a ...)
 "use strict";
@@ -54,6 +54,16 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><script>
       // window.open to another site must not open a window inside the client.
       r.openReturned = String(window.open("https://example.com/"));
       r.updates = await n.updates.check();
+      // The themes folder.
+      await n.themes.write("e2e.theme.css", "/** @name E2E */ body{}");
+      r.themeList = (await n.themes.list()).files.map((f) => f.file);
+      r.themeRead = await n.themes.read("e2e.theme.css");
+      r.themeEscape = await n.themes.read("../settings.json").then(() => false, () => true);
+      const media = await n.themes.writeMedia("bg é.png", new Uint8Array([1, 2, 3, 250]));
+      r.media = media;
+      r.mediaBack = [...new Uint8Array(await n.themes.readMedia(media))];
+      await n.themes.delete("e2e.theme.css");
+      r.themeListAfter = (await n.themes.list()).files.length;
       // The custom titlebar puts its buttons into Discord's top bar, and shows its own bar when
       // Discord has none.
       const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
@@ -135,6 +145,12 @@ server.listen(0, "127.0.0.1", async () => {
     assert.equal(first.fetched, "plugin source");
     assert.equal(first.fileBlocked, true);
     assert.equal(first.openReturned, "null");
+    assert.deepEqual(first.themeList, ["e2e.theme.css"]);
+    assert.equal(first.themeRead, "/** @name E2E */ body{}");
+    assert.equal(first.themeEscape, true, "theme paths can't leave the themes folder");
+    assert.equal(first.media, "media/bg é.png");
+    assert.deepEqual(first.mediaBack, [1, 2, 3, 250]);
+    assert.equal(first.themeListAfter, 0);
     assert.deepEqual(first.titlebar, { inBar: true, buttons: 3, fallback: false, fallbackAfterRemove: true }, "window controls in Discord's top bar");
     assert.equal(first.window.decorated, false, "the system title bar is off");
 

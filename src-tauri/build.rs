@@ -68,4 +68,4 @@ fn main() {
 }
 
 /// Keep in sync with `generate_handler!` in src/lib.rs and capabilities/discord.json.
-const COMMANDS: &[&str] = &["storage_set", "storage_delete", "fetch_text", "relaunch", "open_devtools", "disable_corrode", "open_external", "update_check", "update_corrode", "update_client", "window_control"];
+const COMMANDS: &[&str] = &["storage_set", "storage_delete", "fetch_text", "relaunch", "open_devtools", "disable_corrode", "open_external", "update_check", "update_corrode", "update_client", "themes_list", "themes_read", "themes_write", "themes_delete", "themes_open_folder", "themes_media_write", "themes_media_read", "window_control"];

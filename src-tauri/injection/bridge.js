@@ -9,8 +9,8 @@
   console.info(`[AesDc] client ${cfg.version} injected; Corrode ${cfg.corrode ? "enabled" : "off (turn it on from the tray)"}`);
 
   const internals = window.__TAURI_INTERNALS__;
-  const invoke = (cmd, args) =>
-    internals ? internals.invoke(cmd, args) : Promise.reject(new Error("AesDc bridge unavailable"));
+  const invoke = (cmd, args, options) =>
+    internals ? internals.invoke(cmd, args, options) : Promise.reject(new Error("AesDc bridge unavailable"));
 
   // Corrode's storage API is synchronous, but calls into the app are not. Keep the settings in
   // memory: they start from the snapshot the app embedded in this script and every change is
@@ -87,6 +87,22 @@
         close: () => invoke("window_control", { action: "close" }),
         startDrag: () => invoke("window_control", { action: "startDrag" }),
         state: () => invoke("window_control", { action: "state" }),
+      }),
+      // The themes folder (<config dir>/themes): .css files shown on Corrode's Themes page, and
+      // the pictures and videos its theme creator uses as backgrounds (themes/media).
+      themes: Object.freeze({
+        list: () => invoke("themes_list"),
+        read: (file) => invoke("themes_read", { file: String(file) }),
+        write: (file, css) => invoke("themes_write", { file: String(file), css: String(css) }),
+        delete: (file) => invoke("themes_delete", { file: String(file) }),
+        openFolder: () => invoke("themes_open_folder"),
+        // Resolves to the saved file's path in the themes folder, "media/<name>".
+        writeMedia: async (name, data) => {
+          const bytes = data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : new Uint8Array(data);
+          return invoke("themes_media_write", bytes, { headers: { "x-file-name": encodeURIComponent(String(name)) } });
+        },
+        // Resolves to an ArrayBuffer.
+        readMedia: (path) => invoke("themes_media_read", { path: String(path) }),
       }),
     }),
   });
