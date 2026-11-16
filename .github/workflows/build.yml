@@ -14,6 +14,12 @@ on:
 permissions:
   contents: write
 
+# Two pushes close together used to publish latest-main at the same time and the second one
+# failed. A newer push now cancels the older run on the same branch, so the newest build wins.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
