@@ -47,8 +47,14 @@ struct AppState {
     settings: Mutex<Settings>,
     corrode_store: Mutex<CorrodeStore>,
     tray: Mutex<bool>,
-    /// Whether the webview was last told it is out of sight (see perf.rs).
-    background: Mutex<bool>,
+    /// What the webview was last told about the window (see perf.rs).
+    background: Mutex<Background>,
+}
+
+struct Background {
+    visible: bool,
+    trim: bool,
+    unfocused_since: Option<std::time::Instant>,
 }
 
 impl AppState {
@@ -334,7 +340,7 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .inner_size(1280.0, 800.0)
         .min_inner_size(940.0, 500.0)
         .initialization_script(&script)
-        .additional_browser_args(&perf::browser_args(settings.low_memory_mode, &settings.extra_browser_args));
+        .additional_browser_args(&perf::browser_args(settings.memory_saver, settings.low_memory_mode, &settings.extra_browser_args));
     build_frame(builder, settings.custom_titlebar).build()
 }
 
@@ -370,16 +376,37 @@ fn show_main(app: &AppHandle) {
     }
 }
 
-/// Puts the webview in or out of its background state (see perf.rs) to match the window:
-/// in the background while minimized or hidden to the tray.
+/// How long the window may sit unfocused before its memory is trimmed.
+const TRIM_AFTER_UNFOCUSED: Duration = Duration::from_secs(30);
+
+/// Keeps the webview's state (see perf.rs) in step with the window: not visible while minimized
+/// or hidden to the tray, and trimmed while out of sight or left unfocused for a while.
 fn sync_background(app: &AppHandle) {
     let Some(w) = app.get_webview_window(MAIN) else { return };
-    let background = !w.is_visible().unwrap_or(true) || w.is_minimized().unwrap_or(false);
+    let visible = w.is_visible().unwrap_or(true) && !w.is_minimized().unwrap_or(false);
+    let focused = visible && w.is_focused().unwrap_or(true);
     let state = app.state::<AppState>();
-    let mut last = state.background.lock().unwrap();
-    if *last != background {
-        *last = background;
-        perf::set_background(&w, background);
+    let mut bg = state.background.lock().unwrap();
+    if focused {
+        bg.unfocused_since = None;
+    } else if bg.unfocused_since.is_none() {
+        bg.unfocused_since = Some(std::time::Instant::now());
+        if visible {
+            // Look again once the window has been unfocused for long enough.
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(TRIM_AFTER_UNFOCUSED + Duration::from_millis(100));
+                sync_background(&app);
+            });
+        }
+    }
+    let trim = !visible || bg.unfocused_since.is_some_and(|t| t.elapsed() >= TRIM_AFTER_UNFOCUSED);
+    let changed = (bg.visible, bg.trim) != (visible, trim);
+    bg.visible = visible;
+    bg.trim = trim;
+    drop(bg);
+    if changed {
+        perf::set_state(&w, visible, trim);
     }
 }
 
@@ -392,10 +419,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let titlebar = CheckMenuItem::with_id(app, "titlebar", "Custom titlebar", true, custom_titlebar, None::<&str>)?;
     let low_memory_mode = app.state::<AppState>().settings.lock().unwrap().low_memory_mode;
     let low_memory = CheckMenuItem::with_id(app, "lowmemory", "Low memory mode (next launch)", true, low_memory_mode, None::<&str>)?;
+    let memory_saver_on = app.state::<AppState>().settings.lock().unwrap().memory_saver;
+    let memory_saver = CheckMenuItem::with_id(app, "memorysaver", "Memory saver (next launch)", true, memory_saver_on, None::<&str>)?;
     let devtools = MenuItem::with_id(app, "devtools", "Open DevTools", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit AesDc", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &reload, &corrode, &titlebar, &low_memory, &devtools, &sep, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &reload, &corrode, &titlebar, &memory_saver, &low_memory, &devtools, &sep, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("AesDc")
@@ -421,10 +450,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             }
             // Saved only. WebView2's arguments can't change while its processes are still
             // running, and they can outlive a quick restart, so this applies at the next launch.
-            "lowmemory" => {
+            id @ ("lowmemory" | "memorysaver") => {
                 let state = app.state::<AppState>();
                 let mut s = state.settings.lock().unwrap();
-                s.low_memory_mode = !s.low_memory_mode;
+                if id == "lowmemory" {
+                    s.low_memory_mode = !s.low_memory_mode;
+                } else {
+                    s.memory_saver = !s.memory_saver;
+                }
                 if let Err(e) = state.save_settings(&s) {
                     eprintln!("[AesDc] could not save settings: {e}");
                 }
@@ -478,7 +511,7 @@ pub fn run() {
             let dir = app.path().app_config_dir()?;
             let settings: Settings = store::load(&dir.join("settings.json"));
             let corrode_store: CorrodeStore = store::load(&dir.join("corrode-storage.json"));
-            app.manage(AppState { dir, settings: Mutex::new(settings), corrode_store: Mutex::new(corrode_store), tray: Mutex::new(false), background: Mutex::new(false) });
+            app.manage(AppState { dir, settings: Mutex::new(settings), corrode_store: Mutex::new(corrode_store), tray: Mutex::new(false), background: Mutex::new(Background { visible: true, trim: false, unfocused_since: None }) });
 
             let handle = app.handle().clone();
             match build_tray(&handle) {

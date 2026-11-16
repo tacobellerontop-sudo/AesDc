@@ -79,6 +79,7 @@ The client's settings live in `settings.json` in the app config folder
   "closeToTray": true,
   "discordUrl": "https://discord.com/app",
   "customTitlebar": true,
+  "memorySaver": true,
   "lowMemoryMode": false,
   "extraBrowserArgs": ""
 }
@@ -103,9 +104,21 @@ tab) pays the same cost. What AesDc does about the rest:
 - Corrode stops watching the themes folder while the window is hidden, and its page watchers run
   a few times a second instead of on every frame.
 
-**Low memory mode** (tray menu, or `"lowMemoryMode": true`; applies at the next launch) lets
-Discord's embeds (YouTube, Spotify, captchas) share Discord's process instead of getting one
-each. It saves memory, but the sites Discord embeds are no longer isolated from Discord.
+- After 30 seconds without focus (you are in another app), WebView2 is asked to trim its memory
+  too. It goes back to normal the moment you click the window.
+
+**Memory saver** (tray menu, or `"memorySaver"`; on by default, applies at the next launch) runs
+Chromium in its low-end device mode with a JavaScript engine that compiles for size, not speed:
+smaller caches of decoded images and drawn tiles, and earlier garbage collection. On a heavy test
+page in Chromium it took the page's process from about 440 MB to 240 MB. Turn it off if Discord
+feels slower.
+
+**Low memory mode** (tray menu, or `"lowMemoryMode": true`; off by default, applies at the next
+launch) folds WebView2's helper processes together. Discord's embeds (YouTube, Spotify,
+captchas) share Discord's process instead of getting one each, and the GPU, network and audio
+services run inside the main browser process. It saves memory, but the sites Discord embeds are
+no longer isolated from Discord, and a crash in one of those services closes the client. If the
+window stays blank with it on, turn it off from the tray and start AesDc again.
 
 `extraBrowserArgs` adds your own WebView2 flags (Windows), for example `--disable-gpu`, which
 moves drawing from the GPU process to the CPU. Its `--disable-features` list is merged with

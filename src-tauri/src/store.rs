@@ -18,8 +18,9 @@ pub struct Settings {
     pub discord_url: String,
     /// Replace the system title bar with window controls drawn in Discord's own top bar.
     pub custom_titlebar: bool,
-    /// Embeds share Discord's renderer process instead of getting their own (see perf.rs).
-    /// Read at launch.
+    /// Smaller caches and a size-tuned JavaScript engine (see perf.rs). Read at launch.
+    pub memory_saver: bool,
+    /// Folds WebView2's helper processes together (see perf.rs). Read at launch.
     pub low_memory_mode: bool,
     /// Extra WebView2 browser arguments (Windows), for trying flags without a rebuild.
     pub extra_browser_args: String,
@@ -32,6 +33,7 @@ impl Default for Settings {
             close_to_tray: cfg!(windows),
             discord_url: "https://discord.com/app".into(),
             custom_titlebar: true,
+            memory_saver: true,
             low_memory_mode: false,
             extra_browser_args: String::new(),
         }
