@@ -34,8 +34,8 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><script>
   // The page's first script, standing in for Discord's.
   window.__first = { corrode: !!window.corrode, native: !!window.CorrodeNative };
   (window.webpackChunkdiscord_app = window.webpackChunkdiscord_app || []).push([[0], {}]);
-</script></head><body style="margin:0"><div id="app-mount"><div class="base_a4d4d9">
-  <div class="bar_c38106" style="position:fixed;top:0;left:0;right:0;height:36px;display:flex">
+</script></head><body style="margin:0"><div id="app-mount" style="position:absolute;inset:0"><div class="base_a4d4d9">
+  <div class="bar_c38106" style="position:absolute;top:0;left:0;right:0;height:36px;display:flex">
     <div class="title_c38106" style="flex:1">Friends</div>
     <div class="trailing_c38106" style="display:flex"><button>inbox</button></div>
   </div></div></div>fake discord<a id="ext" href="https://example.com/" target="_blank">x</a><script>
@@ -75,9 +75,16 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><script>
         fallback: document.documentElement.hasAttribute("data-aesdc-fallback"),
       };
       r.window = await n.window.state();
-      document.querySelector('[class^="bar_"]').remove();
+      const discordBar = document.querySelector('[class^="bar_"]');
+      const barParent = discordBar.parentElement;
+      discordBar.remove();
       await wait(300);
       r.titlebar.fallbackAfterRemove = document.documentElement.hasAttribute("data-aesdc-fallback") && ctl.parentElement.id === "aesdc-titlebar";
+      // Discord's bar showing up while our own bar is up (as after the loading screen): the
+      // buttons move into it and our bar goes away.
+      barParent.append(discordBar);
+      await wait(300);
+      r.titlebar.backInBar = !document.documentElement.hasAttribute("data-aesdc-fallback") && !!ctl.closest('[class*="trailing_"]');
     }
   } catch (e) { r.error = String(e && e.message || e); }
   const reply = await fetch("/report", { method: "POST", body: JSON.stringify(r) }).then((x) => x.text());
@@ -151,7 +158,7 @@ server.listen(0, "127.0.0.1", async () => {
     assert.equal(first.media, "media/bg é.png");
     assert.deepEqual(first.mediaBack, [1, 2, 3, 250]);
     assert.equal(first.themeListAfter, 0);
-    assert.deepEqual(first.titlebar, { inBar: true, buttons: 3, fallback: false, fallbackAfterRemove: true }, "window controls in Discord's top bar");
+    assert.deepEqual(first.titlebar, { inBar: true, buttons: 3, fallback: false, fallbackAfterRemove: true, backInBar: true }, "window controls in Discord's top bar");
     assert.equal(first.window.decorated, false, "the system title bar is off");
 
     const cfg = fs.readdirSync(path.join(home, ".config")).map((d) => path.join(home, ".config", d)).find((d) => fs.existsSync(path.join(d, "corrode-storage.json")));

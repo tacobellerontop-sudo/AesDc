@@ -104,10 +104,14 @@ html[data-aesdc-fullscreen] #app-mount { top: 0 !important; }
   const refreshState = () => win.state().then(applyState, report("reading the window state"));
 
   // Discord's top bar: the full-width strip at the top of the window.
+  // Measured against #app-mount, not the window: while our own bar is showing, Discord's app sits
+  // below it, so its top bar is not at the top of the window.
   const looksLikeBar = (el) => {
-    if (!(el instanceof HTMLElement) || el.id === "aesdc-titlebar") return false;
+    const mount = document.getElementById("app-mount");
+    if (!(el instanceof HTMLElement) || !mount || el.id === "aesdc-titlebar") return false;
+    const m = mount.getBoundingClientRect();
     const r = el.getBoundingClientRect();
-    return r.top <= 1 && r.left <= 1 && r.width >= window.innerWidth - 2 && r.height >= 20 && r.height <= 64;
+    return r.top - m.top <= 1 && r.left - m.left <= 1 && r.width >= m.width - 2 && r.height >= 20 && r.height <= 64;
   };
   const findBar = () => {
     const mount = document.getElementById("app-mount");
