@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-themes-media-write"
+description = "Enables the themes_media_write command without any pre-configured scope."
+commands.allow = ["themes_media_write"]
+
+[[permission]]
+identifier = "deny-themes-media-write"
+description = "Denies the themes_media_write command without any pre-configured scope."
+commands.deny = ["themes_media_write"]

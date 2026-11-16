@@ -2,7 +2,7 @@
 // End-to-end test of the real client: serves a fake Discord page on 127.0.0.1, starts the AesDc
 // binary pointed at it (AESDC_DISCORD_URL), and checks from inside the page that Corrode ran
 // before the page's first script, the CorrodeNative bridge works, settings reach the settings
-// file, links are kept out of the client, an update check finds a newer Corrode, downloads it and
+// file, links are kept out of the client, the themes folder works, an update check finds a newer Corrode, downloads it and
 // loads it after a restart, and "Uninstall Corrode" restarts into plain Discord.
 //
 // Usage: node test/e2e.js [path/to/aesdc binary]   (Linux needs a display: xvfb-run -a ...)
@@ -49,6 +49,16 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><script>
       // window.open to another site must not open a window inside the client.
       r.openReturned = String(window.open("https://example.com/"));
       r.updates = await n.updates.check();
+      // The themes folder.
+      await n.themes.write("e2e.theme.css", "/** @name E2E */ body{}");
+      r.themeList = (await n.themes.list()).files.map((f) => f.file);
+      r.themeRead = await n.themes.read("e2e.theme.css");
+      r.themeEscape = await n.themes.read("../settings.json").then(() => false, () => true);
+      const media = await n.themes.writeMedia("bg é.png", new Uint8Array([1, 2, 3, 250]));
+      r.media = media;
+      r.mediaBack = [...new Uint8Array(await n.themes.readMedia(media))];
+      await n.themes.delete("e2e.theme.css");
+      r.themeListAfter = (await n.themes.list()).files.length;
     }
   } catch (e) { r.error = String(e && e.message || e); }
   const reply = await fetch("/report", { method: "POST", body: JSON.stringify(r) }).then((x) => x.text());
@@ -116,6 +126,12 @@ server.listen(0, "127.0.0.1", async () => {
     assert.equal(first.fetched, "plugin source");
     assert.equal(first.fileBlocked, true);
     assert.equal(first.openReturned, "null");
+    assert.deepEqual(first.themeList, ["e2e.theme.css"]);
+    assert.equal(first.themeRead, "/** @name E2E */ body{}");
+    assert.equal(first.themeEscape, true, "theme paths can't leave the themes folder");
+    assert.equal(first.media, "media/bg é.png");
+    assert.deepEqual(first.mediaBack, [1, 2, 3, 250]);
+    assert.equal(first.themeListAfter, 0);
 
     const cfg = fs.readdirSync(path.join(home, ".config")).map((d) => path.join(home, ".config", d)).find((d) => fs.existsSync(path.join(d, "corrode-storage.json")));
     assert.ok(cfg, "settings folder");

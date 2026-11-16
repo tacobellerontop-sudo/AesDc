@@ -6,5 +6,5 @@
   "remote": {
     "urls": ["https://discord.com/*", "https://ptb.discord.com/*", "https://canary.discord.com/*"]
   },
-  "permissions": ["core:default", "allow-storage-set", "allow-storage-delete", "allow-fetch-text", "allow-relaunch", "allow-open-devtools", "allow-disable-corrode", "allow-open-external", "allow-update-check", "allow-update-corrode", "allow-update-client"]
+  "permissions": ["core:default", "allow-storage-set", "allow-storage-delete", "allow-fetch-text", "allow-relaunch", "allow-open-devtools", "allow-disable-corrode", "allow-open-external", "allow-update-check", "allow-update-corrode", "allow-update-client", "allow-themes-list", "allow-themes-read", "allow-themes-write", "allow-themes-delete", "allow-themes-open-folder", "allow-themes-media-write", "allow-themes-media-read"]
 }

@@ -3,6 +3,7 @@
 //! into it before Discord's scripts run.
 mod inject;
 mod store;
+mod themes;
 mod update;
 
 use std::{path::PathBuf, sync::Mutex, time::Duration};
@@ -29,6 +30,13 @@ const BRIDGE_PERMISSIONS: &[&str] = &[
     "allow-update-check",
     "allow-update-corrode",
     "allow-update-client",
+    "allow-themes-list",
+    "allow-themes-read",
+    "allow-themes-write",
+    "allow-themes-delete",
+    "allow-themes-open-folder",
+    "allow-themes-media-write",
+    "allow-themes-media-read",
 ];
 const MAX_FETCH_BYTES: usize = 20 * 1024 * 1024;
 
@@ -152,6 +160,70 @@ async fn update_client(app: AppHandle) -> Result<(), String> {
     {
         app.opener().open_url(update::CLIENT_RELEASE_PAGE, None::<&str>).map_err(|e| e.to_string())
     }
+}
+
+// ---- Themes folder (see themes.rs) -----------------------------------------------------------
+
+#[tauri::command]
+fn themes_list(state: tauri::State<AppState>) -> Result<themes::Listing, String> {
+    themes::list(&state.dir)
+}
+
+#[tauri::command]
+fn themes_read(state: tauri::State<AppState>, file: String) -> Result<String, String> {
+    themes::read(&state.dir, &file)
+}
+
+#[tauri::command]
+fn themes_write(state: tauri::State<AppState>, file: String, css: String) -> Result<(), String> {
+    themes::write(&state.dir, &file, &css)
+}
+
+#[tauri::command]
+fn themes_delete(state: tauri::State<AppState>, file: String) -> Result<(), String> {
+    themes::delete(&state.dir, &file)
+}
+
+#[tauri::command]
+fn themes_open_folder(app: AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
+    let dir = themes::dir(&state.dir)?;
+    app.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Saves a background picture or video. The bytes are the request body; the file name is in the
+/// `x-file-name` header (URI-encoded). Returns its path in the themes folder (`media/<name>`).
+#[tauri::command]
+async fn themes_media_write(state: tauri::State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Expected the file's bytes".into());
+    };
+    let name = request.headers().get("x-file-name").and_then(|v| v.to_str().ok()).ok_or("Missing file name")?;
+    let name = percent_decode(name);
+    themes::write_media(&state.dir, &name, bytes)
+}
+
+#[tauri::command]
+async fn themes_media_read(state: tauri::State<'_, AppState>, path: String) -> Result<tauri::ipc::Response, String> {
+    themes::read_media(&state.dir, &path).map(tauri::ipc::Response::new)
+}
+
+/// Undoes `encodeURIComponent` (header values must be ASCII).
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 // ---- Window, tray, settings ------------------------------------------------------------------
@@ -298,7 +370,14 @@ pub fn run() {
             open_external,
             update_check,
             update_corrode,
-            update_client
+            update_client,
+            themes_list,
+            themes_read,
+            themes_write,
+            themes_delete,
+            themes_open_folder,
+            themes_media_write,
+            themes_media_read
         ])
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
