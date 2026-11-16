@@ -34,6 +34,17 @@
     } catch {}
     return store.rev;
   };
+  const toBase64 = (bytes) => {
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  };
+  const fromBase64 = (b64) => {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  };
   const report = (what) => (err) => console.error(`[AesDc] ${what} failed`, err);
   const has = (k) => Object.prototype.hasOwnProperty.call(store.data, k);
 
@@ -96,13 +107,40 @@
         write: (file, css) => invoke("themes_write", { file: String(file), css: String(css) }),
         delete: (file) => invoke("themes_delete", { file: String(file) }),
         openFolder: () => invoke("themes_open_folder"),
-        // Resolves to the saved file's path in the themes folder, "media/<name>".
+        // Resolves to the saved file's path in the themes folder, "media/<name>". Sent in
+        // base64 chunks: Windows' webview can't pass raw bytes from a remote page.
         writeMedia: async (name, data) => {
           const bytes = data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : new Uint8Array(data);
-          return invoke("themes_media_write", bytes, { headers: { "x-file-name": encodeURIComponent(String(name)) } });
+          const upload = Math.random().toString(36).slice(2) + Date.now().toString(36);
+          const CHUNK = 3 * 1024 * 1024;
+          let saved = null;
+          for (let offset = 0; offset < bytes.length || offset === 0; offset += CHUNK) {
+            const part = bytes.subarray(offset, offset + CHUNK);
+            const last = offset + CHUNK >= bytes.length;
+            saved = await invoke("themes_media_write", { upload, name: String(name), data: toBase64(part), offset, last });
+            if (last) break;
+          }
+          return saved;
         },
         // Resolves to an ArrayBuffer.
-        readMedia: (path) => invoke("themes_media_read", { path: String(path) }),
+        readMedia: async (path) => {
+          const CHUNK = 4 * 1024 * 1024;
+          const parts = [];
+          let offset = 0;
+          let size = Infinity;
+          while (offset < size) {
+            const r = await invoke("themes_media_read", { path: String(path), offset, length: CHUNK });
+            size = r.size;
+            const part = fromBase64(r.data);
+            if (!part.length) break;
+            parts.push(part);
+            offset += part.length;
+          }
+          const out = new Uint8Array(offset);
+          let at = 0;
+          for (const p of parts) out.set(p, (at += p.length) - p.length);
+          return out.buffer;
+        },
       }),
     }),
   });

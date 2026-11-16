@@ -62,6 +62,11 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><script>
       const media = await n.themes.writeMedia("bg é.png", new Uint8Array([1, 2, 3, 250]));
       r.media = media;
       r.mediaBack = [...new Uint8Array(await n.themes.readMedia(media))];
+      // A larger file goes over in several chunks.
+      const big = new Uint8Array(7_000_003).map((_, i) => (i * 7) & 255);
+      const bigPath = await n.themes.writeMedia("big.mp4", new Blob([big]));
+      const back = new Uint8Array(await n.themes.readMedia(bigPath));
+      r.big = { path: bigPath, same: back.length === big.length && back.every((b, i) => b === big[i]) };
       await n.themes.delete("e2e.theme.css");
       r.themeListAfter = (await n.themes.list()).files.length;
       // The custom titlebar puts its buttons into Discord's top bar, and shows its own bar when
@@ -158,6 +163,7 @@ server.listen(0, "127.0.0.1", async () => {
     assert.equal(first.media, "media/bg é.png");
     assert.deepEqual(first.mediaBack, [1, 2, 3, 250]);
     assert.equal(first.themeListAfter, 0);
+    assert.deepEqual(first.big, { path: "media/big.mp4", same: true }, "large media round-trips in chunks");
     assert.deepEqual(first.titlebar, { inBar: true, buttons: 3, fallback: false, fallbackAfterRemove: true, backInBar: true }, "window controls in Discord's top bar");
     assert.equal(first.window.decorated, false, "the system title bar is off");
 

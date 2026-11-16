@@ -226,40 +226,33 @@ fn themes_open_folder(app: AppHandle, state: tauri::State<AppState>) -> Result<(
     app.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
 }
 
-/// Saves a background picture or video. The bytes are the request body; the file name is in the
-/// `x-file-name` header (URI-encoded). Returns its path in the themes folder (`media/<name>`).
+/// Saves a background picture or video, sent as base64 chunks: each call appends `data` at
+/// `offset` to upload `upload`; the call with `last` saves it as `name` and returns its path in
+/// the themes folder (`media/<name>`).
 #[tauri::command]
-async fn themes_media_write(state: tauri::State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<String, String> {
-    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
-        return Err("Expected the file's bytes".into());
-    };
-    let name = request.headers().get("x-file-name").and_then(|v| v.to_str().ok()).ok_or("Missing file name")?;
-    let name = percent_decode(name);
-    themes::write_media(&state.dir, &name, bytes)
-}
-
-#[tauri::command]
-async fn themes_media_read(state: tauri::State<'_, AppState>, path: String) -> Result<tauri::ipc::Response, String> {
-    themes::read_media(&state.dir, &path).map(tauri::ipc::Response::new)
-}
-
-/// Undoes `encodeURIComponent` (header values must be ASCII).
-fn percent_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
+async fn themes_media_write(state: tauri::State<'_, AppState>, upload: String, name: String, data: String, offset: u64, last: bool) -> Result<Option<String>, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(|e| format!("Bad file data: {e}"))?;
+    themes::upload_append(&state.dir, &upload, offset, &bytes)?;
+    if last {
+        themes::upload_finish(&state.dir, &upload, &name).map(Some)
+    } else {
+        Ok(None)
     }
-    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[derive(serde::Serialize)]
+struct MediaChunk {
+    data: String,
+    size: u64,
+}
+
+/// Reads part of a background picture or video, as base64.
+#[tauri::command]
+async fn themes_media_read(state: tauri::State<'_, AppState>, path: String, offset: u64, length: u64) -> Result<MediaChunk, String> {
+    use base64::Engine;
+    let (bytes, size) = themes::read_media_chunk(&state.dir, &path, offset, length)?;
+    Ok(MediaChunk { data: base64::engine::general_purpose::STANDARD.encode(bytes), size })
 }
 
 // ---- Window, tray, settings ------------------------------------------------------------------

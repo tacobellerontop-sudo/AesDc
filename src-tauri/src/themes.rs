@@ -161,6 +161,58 @@ pub fn read_media(config: &Path, rel: &str) -> Result<Vec<u8>, String> {
     fs::read(&p).map_err(|e| format!("Couldn't read {rel}: {e}"))
 }
 
+// Pictures and videos travel from the page in base64 chunks (Windows' webview can't send raw
+// bytes from a remote page), appended to a temporary file in themes/media.
+
+fn upload_path(config: &Path, id: &str) -> Result<PathBuf, String> {
+    if id.is_empty() || id.len() > 40 || !id.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err("Invalid upload id".into());
+    }
+    let d = dir(config)?.join(MEDIA);
+    fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+    Ok(d.join(format!(".upload-{id}")))
+}
+
+/// Adds a chunk to an upload. `offset` 0 starts it over.
+pub fn upload_append(config: &Path, id: &str, offset: u64, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let p = upload_path(config, id)?;
+    if offset + bytes.len() as u64 > MAX_MEDIA {
+        return Err(format!("The file is too large (the limit is {} MB)", MAX_MEDIA / 1024 / 1024));
+    }
+    let mut f = if offset == 0 {
+        fs::File::create(&p)
+    } else {
+        let len = fs::metadata(&p).map_err(|_| "The upload was interrupted; try again".to_string())?.len();
+        if len != offset {
+            return Err("The upload was interrupted; try again".into());
+        }
+        fs::OpenOptions::new().append(true).open(&p)
+    }
+    .map_err(|e| e.to_string())?;
+    f.write_all(bytes).map_err(|e| e.to_string())
+}
+
+/// Saves a finished upload as `name` (see `write_media`) and returns `media/<name>`.
+pub fn upload_finish(config: &Path, id: &str, name: &str) -> Result<String, String> {
+    let p = upload_path(config, id)?;
+    let bytes = fs::read(&p).map_err(|e| e.to_string());
+    let _ = fs::remove_file(&p);
+    write_media(config, name, &bytes?)
+}
+
+/// Part of a picture or video, and the file's full size.
+pub fn read_media_chunk(config: &Path, rel: &str, offset: u64, len: u64) -> Result<(Vec<u8>, u64), String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let p = media_path(config, rel)?;
+    let mut f = fs::File::open(&p).map_err(|e| format!("Couldn't read {rel}: {e}"))?;
+    let size = f.metadata().map_err(|e| e.to_string())?.len();
+    f.seek(SeekFrom::Start(offset.min(size))).map_err(|e| e.to_string())?;
+    let mut buf = Vec::new();
+    f.take(len.min(16 * 1024 * 1024)).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    Ok((buf, size))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +257,18 @@ mod tests {
         assert_eq!(write_media(&c, "bg.png", b"one").unwrap(), "media/bg.png");
         assert_eq!(write_media(&c, "bg.png", b"two").unwrap(), "media/bg-2.png");
         assert_eq!(read_media(&c, "media/bg-2.png").unwrap(), b"two");
+    }
+
+    #[test]
+    fn chunked_uploads_and_reads() {
+        let c = tmp();
+        upload_append(&c, "abc", 0, b"hel").unwrap();
+        upload_append(&c, "abc", 3, b"lo").unwrap();
+        assert!(upload_append(&c, "abc", 9, b"x").is_err(), "a gap is an error");
+        assert!(upload_append(&c, "../x", 0, b"x").is_err());
+        assert_eq!(upload_finish(&c, "abc", "v.mp4").unwrap(), "media/v.mp4");
+        assert!(!c.join(DIR).join(MEDIA).join(".upload-abc").exists());
+        assert_eq!(read_media_chunk(&c, "media/v.mp4", 1, 3).unwrap(), (b"ell".to_vec(), 5));
+        assert_eq!(read_media_chunk(&c, "media/v.mp4", 4, 10).unwrap(), (b"o".to_vec(), 5));
     }
 }
