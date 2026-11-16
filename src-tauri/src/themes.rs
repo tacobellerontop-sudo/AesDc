@@ -130,7 +130,7 @@ pub fn delete(config: &Path, name: &str) -> Result<(), String> {
 
 /// Saves a background picture or video and returns its path relative to the themes folder
 /// (`media/<name>`). An existing file with the same name and contents is reused; a different one
-/// gets a numbered name.
+/// gets a numbered name (`name-2.png`). Themes name it in a header line, so no spaces are added.
 pub fn write_media(config: &Path, name: &str, bytes: &[u8]) -> Result<String, String> {
     if bytes.len() as u64 > MAX_MEDIA {
         return Err(format!("{name} is too large (the limit is {} MB)", MAX_MEDIA / 1024 / 1024));
@@ -145,7 +145,7 @@ pub fn write_media(config: &Path, name: &str, bytes: &[u8]) -> Result<String, St
             Ok(m) if m.len() == bytes.len() as u64 && fs::read(&path).map_or(false, |b| b == bytes) => {
                 return Ok(format!("{MEDIA}/{}", path.file_name().unwrap().to_string_lossy()));
             }
-            Ok(_) => path = path.with_file_name(format!("{stem} ({n}).{ext}")),
+            Ok(_) => path = path.with_file_name(format!("{stem}-{n}.{ext}")),
         }
     }
     fs::write(&path, bytes).map_err(|e| format!("Couldn't save {name}: {e}"))?;
@@ -203,7 +203,7 @@ mod tests {
         let c = tmp();
         assert_eq!(write_media(&c, "bg.png", b"one").unwrap(), "media/bg.png");
         assert_eq!(write_media(&c, "bg.png", b"one").unwrap(), "media/bg.png");
-        assert_eq!(write_media(&c, "bg.png", b"two").unwrap(), "media/bg (2).png");
-        assert_eq!(read_media(&c, "media/bg (2).png").unwrap(), b"two");
+        assert_eq!(write_media(&c, "bg.png", b"two").unwrap(), "media/bg-2.png");
+        assert_eq!(read_media(&c, "media/bg-2.png").unwrap(), b"two");
     }
 }
