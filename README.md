@@ -27,6 +27,11 @@ Tagging `v*` publishes a versioned release.
 ## Features
 
 - Discord in its own window, with your login kept between launches.
+- A custom titlebar: the system title bar is gone and the minimize, maximize and close buttons sit
+  in Discord's own top bar, next to the inbox and help buttons, like the official app. Drag the
+  empty part of that bar to move the window and double-click it to maximize. On macOS the traffic
+  lights float over Discord's bar instead. Turn it off from the tray (**Custom titlebar**) or with
+  `"customTitlebar": false` in the settings.
 - Corrode loads before Discord's own scripts ("early" mode), so plugin patches reach every module.
 - Tray icon: show, reload, turn Corrode on or off, open DevTools, quit. On Windows, closing the
   window hides it to the tray.
@@ -36,12 +41,16 @@ Tagging `v*` publishes a versioned release.
 ## How the injector works
 
 The window loads `https://discord.com/app` and registers one webview initialization script, which
-the webview runs in the page before any of Discord's scripts. It has two parts:
+the webview runs in the page before any of Discord's scripts. It has three parts:
 
 1. [`injection/bridge.js`](src-tauri/injection/bridge.js) sets up `window.CorrodeNative`, the
    bridge from Corrode's [`docs/INJECTOR.md`](https://github.com/tacobellerontop-sudo/corrode/blob/main/docs/INJECTOR.md)
    (injector API v1). It also sends external links to the browser.
-2. Corrode itself (`corrode.min.js`), which is built into the binary.
+2. [`injection/titlebar.js`](src-tauri/injection/titlebar.js), the custom titlebar. It finds
+   Discord's top bar by its shape (a full-width strip at the top of the window, since Discord's
+   class names are hashed), adds the window buttons to its right-hand section and makes its empty
+   parts drag the window. Where Discord has no bar (loading, login), it shows a slim bar of its own.
+3. Corrode itself (`corrode.min.js`), which is built into the binary.
 
 The bridge calls into the Rust side (`src-tauri/src/lib.rs`):
 
@@ -51,6 +60,7 @@ The bridge calls into the Rust side (`src-tauri/src/lib.rs`):
 | `fetchText` | Downloads remote plugins and themes from the Rust side (http and https only), so Discord's CSP and CORS don't block them. |
 | `relaunch` | Restarts the client. |
 | `openDevTools` | Opens the webview's DevTools. |
+| `window` | AesDc only, for the custom titlebar: `minimize`, `toggleMaximize`, `close` (close-to-tray still applies), `startDrag` and `state`. Each resolves to `{ maximized, fullscreen, focused, decorated }`. |
 | `eject` | Corrode's **Uninstall Corrode** button. It turns Corrode off and restarts into plain Discord. Turn it back on from the tray. |
 
 Only Discord's own pages (`discord.com`, `ptb.discord.com`, `canary.discord.com`) get the bridge
@@ -66,7 +76,8 @@ The client's settings live in `settings.json` in the app config folder
 {
   "corrodeEnabled": true,
   "closeToTray": true,
-  "discordUrl": "https://discord.com/app"
+  "discordUrl": "https://discord.com/app",
+  "customTitlebar": true
 }
 ```
 

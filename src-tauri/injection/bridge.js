@@ -79,6 +79,15 @@
         updateCorrode: () => invoke("update_corrode"),
         updateClient: () => invoke("update_client"),
       }),
+      // The window, for the custom titlebar. Each call resolves to the window's state:
+      // { maximized, fullscreen, focused, decorated }.
+      window: Object.freeze({
+        minimize: () => invoke("window_control", { action: "minimize" }),
+        toggleMaximize: () => invoke("window_control", { action: "toggleMaximize" }),
+        close: () => invoke("window_control", { action: "close" }),
+        startDrag: () => invoke("window_control", { action: "startDrag" }),
+        state: () => invoke("window_control", { action: "state" }),
+      }),
     }),
   });
 

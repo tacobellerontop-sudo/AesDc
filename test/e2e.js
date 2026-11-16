@@ -3,7 +3,8 @@
 // binary pointed at it (AESDC_DISCORD_URL), and checks from inside the page that Corrode ran
 // before the page's first script, the CorrodeNative bridge works, settings reach the settings
 // file, links are kept out of the client, an update check finds a newer Corrode, downloads it and
-// loads it after a restart, and "Uninstall Corrode" restarts into plain Discord.
+// loads it after a restart, the custom titlebar sits in Discord's top bar, and "Uninstall Corrode"
+// restarts into plain Discord.
 //
 // Usage: node test/e2e.js [path/to/aesdc binary]   (Linux needs a display: xvfb-run -a ...)
 "use strict";
@@ -33,7 +34,11 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><script>
   // The page's first script, standing in for Discord's.
   window.__first = { corrode: !!window.corrode, native: !!window.CorrodeNative };
   (window.webpackChunkdiscord_app = window.webpackChunkdiscord_app || []).push([[0], {}]);
-</script></head><body>fake discord<a id="ext" href="https://example.com/" target="_blank">x</a><script>
+</script></head><body style="margin:0"><div id="app-mount"><div class="base_a4d4d9">
+  <div class="bar_c38106" style="position:fixed;top:0;left:0;right:0;height:36px;display:flex">
+    <div class="title_c38106" style="flex:1">Friends</div>
+    <div class="trailing_c38106" style="display:flex"><button>inbox</button></div>
+  </div></div></div>fake discord<a id="ext" href="https://example.com/" target="_blank">x</a><script>
 (async () => {
   const r = { ...window.__first, corrode: !!window.corrode };
   try {
@@ -49,6 +54,20 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><script>
       // window.open to another site must not open a window inside the client.
       r.openReturned = String(window.open("https://example.com/"));
       r.updates = await n.updates.check();
+      // The custom titlebar puts its buttons into Discord's top bar, and shows its own bar when
+      // Discord has none.
+      const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+      await wait(300);
+      const ctl = document.getElementById("aesdc-winctl");
+      r.titlebar = {
+        inBar: !!(ctl && ctl.closest('[class*="trailing_"]')),
+        buttons: ctl ? ctl.querySelectorAll("button").length : 0,
+        fallback: document.documentElement.hasAttribute("data-aesdc-fallback"),
+      };
+      r.window = await n.window.state();
+      document.querySelector('[class^="bar_"]').remove();
+      await wait(300);
+      r.titlebar.fallbackAfterRemove = document.documentElement.hasAttribute("data-aesdc-fallback") && ctl.parentElement.id === "aesdc-titlebar";
     }
   } catch (e) { r.error = String(e && e.message || e); }
   const reply = await fetch("/report", { method: "POST", body: JSON.stringify(r) }).then((x) => x.text());
@@ -116,6 +135,8 @@ server.listen(0, "127.0.0.1", async () => {
     assert.equal(first.fetched, "plugin source");
     assert.equal(first.fileBlocked, true);
     assert.equal(first.openReturned, "null");
+    assert.deepEqual(first.titlebar, { inBar: true, buttons: 3, fallback: false, fallbackAfterRemove: true }, "window controls in Discord's top bar");
+    assert.equal(first.window.decorated, false, "the system title bar is off");
 
     const cfg = fs.readdirSync(path.join(home, ".config")).map((d) => path.join(home, ".config", d)).find((d) => fs.existsSync(path.join(d, "corrode-storage.json")));
     assert.ok(cfg, "settings folder");
