@@ -16,6 +16,8 @@ pub struct Settings {
     pub close_to_tray: bool,
     /// The Discord web app to load: Stable, PTB or Canary.
     pub discord_url: String,
+    /// Replace the system title bar with window controls drawn in Discord's own top bar.
+    pub custom_titlebar: bool,
 }
 
 impl Default for Settings {
@@ -24,6 +26,7 @@ impl Default for Settings {
             corrode_enabled: true,
             close_to_tray: cfg!(windows),
             discord_url: "https://discord.com/app".into(),
+            custom_titlebar: true,
         }
     }
 }

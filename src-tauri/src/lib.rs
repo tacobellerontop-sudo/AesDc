@@ -30,6 +30,7 @@ const BRIDGE_PERMISSIONS: &[&str] = &[
     "allow-update-check",
     "allow-update-corrode",
     "allow-update-client",
+    "allow-window-control",
     "allow-themes-list",
     "allow-themes-read",
     "allow-themes-write",
@@ -162,6 +163,41 @@ async fn update_client(app: AppHandle) -> Result<(), String> {
     }
 }
 
+// ---- Custom titlebar (see injection/titlebar.js) ----------------------------------------------
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowState {
+    maximized: bool,
+    fullscreen: bool,
+    focused: bool,
+    decorated: bool,
+}
+
+/// The titlebar's buttons and dragging. `close` goes through the normal close request, so
+/// close-to-tray still applies.
+#[tauri::command]
+fn window_control(window: WebviewWindow, action: String) -> Result<WindowState, String> {
+    let r = match action.as_str() {
+        "minimize" => window.minimize(),
+        "toggleMaximize" => match window.is_maximized() {
+            Ok(true) => window.unmaximize(),
+            _ => window.maximize(),
+        },
+        "close" => window.close(),
+        "startDrag" => window.start_dragging(),
+        "state" => Ok(()),
+        other => return Err(format!("Unknown window action {other}")),
+    };
+    r.map_err(|e| e.to_string())?;
+    Ok(WindowState {
+        maximized: window.is_maximized().unwrap_or(false),
+        fullscreen: window.is_fullscreen().unwrap_or(false),
+        focused: window.is_focused().unwrap_or(true),
+        decorated: window.is_decorated().unwrap_or(true),
+    })
+}
+
 // ---- Themes folder (see themes.rs) -----------------------------------------------------------
 
 #[tauri::command]
@@ -229,9 +265,13 @@ fn percent_decode(s: &str) -> String {
 // ---- Window, tray, settings ------------------------------------------------------------------
 
 fn set_corrode_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    change_settings_and_restart(app, |s| s.corrode_enabled = enabled)
+}
+
+fn change_settings_and_restart(app: &AppHandle, change: impl FnOnce(&mut Settings)) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut s = state.settings.lock().unwrap().clone();
-    s.corrode_enabled = enabled;
+    change(&mut s);
     state.save_settings(&s)?;
     app.restart();
 }
@@ -289,15 +329,39 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             version: env!("CARGO_PKG_VERSION"),
             corrode: corrode.as_deref(),
             storage: &storage,
+            titlebar: settings.custom_titlebar.then_some(inject::TITLEBAR_STYLE),
         })
     };
 
-    WebviewWindowBuilder::new(app, MAIN, WebviewUrl::External(url))
+    let builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::External(url))
         .title("AesDc")
         .inner_size(1280.0, 800.0)
         .min_inner_size(940.0, 500.0)
-        .initialization_script(&script)
-        .build()
+        .initialization_script(&script);
+    build_frame(builder, settings.custom_titlebar).build()
+}
+
+/// The custom titlebar: on Windows and Linux the window has no system frame and the page draws
+/// the controls into Discord's own top bar. On macOS the window keeps its traffic lights, which
+/// float over the page (like the official app) instead of sitting in a separate title bar.
+fn build_frame<'a, R: tauri::Runtime, M: Manager<R>>(
+    builder: WebviewWindowBuilder<'a, R, M>,
+    custom: bool,
+) -> WebviewWindowBuilder<'a, R, M> {
+    if !custom {
+        return builder;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        builder
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .traffic_light_position(tauri::LogicalPosition::new(14.0, 18.0))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder.decorations(false).shadow(true)
+    }
 }
 
 fn show_main(app: &AppHandle) {
@@ -313,10 +377,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show AesDc", true, None::<&str>)?;
     let reload = MenuItem::with_id(app, "reload", "Reload", true, None::<&str>)?;
     let corrode = CheckMenuItem::with_id(app, "corrode", "Load Corrode", true, enabled, None::<&str>)?;
+    let custom_titlebar = app.state::<AppState>().settings.lock().unwrap().custom_titlebar;
+    let titlebar = CheckMenuItem::with_id(app, "titlebar", "Custom titlebar", true, custom_titlebar, None::<&str>)?;
     let devtools = MenuItem::with_id(app, "devtools", "Open DevTools", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit AesDc", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &reload, &corrode, &devtools, &sep, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &reload, &corrode, &titlebar, &devtools, &sep, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("AesDc")
@@ -332,6 +398,11 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "corrode" => {
                 let now = app.state::<AppState>().settings.lock().unwrap().corrode_enabled;
                 if let Err(e) = set_corrode_enabled(app, !now) {
+                    eprintln!("[AesDc] could not save settings: {e}");
+                }
+            }
+            "titlebar" => {
+                if let Err(e) = change_settings_and_restart(app, |s| s.custom_titlebar = !s.custom_titlebar) {
                     eprintln!("[AesDc] could not save settings: {e}");
                 }
             }
@@ -371,6 +442,7 @@ pub fn run() {
             update_check,
             update_corrode,
             update_client,
+            window_control,
             themes_list,
             themes_read,
             themes_write,
